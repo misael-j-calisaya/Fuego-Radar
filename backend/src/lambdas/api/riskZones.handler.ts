@@ -56,8 +56,13 @@ export function createRiskZonesHandler(deps: RiskZonesDeps = defaultDeps) {
       const live = (await deps.queryRiskZones()).filter(
         (item) => typeof item.TTL !== 'number' || item.TTL > nowEpoch,
       );
-      const latest = live.reduce((max, item) => (item.lastUpdated > max ? item.lastUpdated : max), '');
-      const items = live.filter((item) => item.lastUpdated === latest);
+      // Latest generation per province, so a province that failed this run keeps its unexpired zones.
+      const latestByProvince = new Map<string, string>();
+      for (const item of live) {
+        const prev = latestByProvince.get(item.GSI1PK) ?? '';
+        if (item.lastUpdated > prev) latestByProvince.set(item.GSI1PK, item.lastUpdated);
+      }
+      const items = live.filter((item) => item.lastUpdated === latestByProvince.get(item.GSI1PK));
 
       const formatted = items.map((item) => ({
         id: item.SK.replace('GRID#', ''),
