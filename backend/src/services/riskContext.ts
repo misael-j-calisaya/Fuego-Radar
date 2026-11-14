@@ -45,6 +45,7 @@ export function updateDailyHotspotCounts(
   previous: Record<string, number> | undefined,
   today: string,
   todayCount: number,
+  observed: Record<string, number> = {},
 ): Record<string, number> {
   const cutoff = new Date(`${today}T00:00:00Z`).getTime() - (HISTORY_DAYS - 1) * 86_400_000;
   const next: Record<string, number> = {};
@@ -54,7 +55,11 @@ export function updateDailyHotspotCounts(
       next[date] = count;
     }
   }
-  next[today] = Math.max(next[today] ?? 0, Math.max(0, todayCount));
+  for (const [date, count] of Object.entries({ ...observed, [today]: todayCount })) {
+    const ts = new Date(`${date}T00:00:00Z`).getTime();
+    if (!Number.isFinite(ts) || ts < cutoff || !Number.isFinite(count)) continue;
+    next[date] = Math.max(next[date] ?? 0, Math.max(0, count));
+  }
   return next;
 }
 

@@ -231,6 +231,7 @@ export async function runRiskCalculation(
         previousScore?.dailyHotspotCounts,
         today,
         hotspotsToday.length,
+        { [yesterday]: hotspotsYesterday.length },
       );
 
       // Step 3: Fetch weather for this province
