@@ -268,6 +268,11 @@ export async function runRiskCalculation(
       };
 
       const riskResult = deps.evaluateRisk(riskInput);
+      // Alerts are decided on conditions alone; otherwise our own critical alert
+      // would keep re-boosting the score and re-issuing critical alerts forever.
+      const alertLevel = riskInput.hasCriticalAlert
+        ? deps.evaluateRisk({ ...riskInput, hasCriticalAlert: false }).riskLevel
+        : riskResult.riskLevel;
 
       // Step 6: Calculate confidence
       const confidenceResult = deps.calculateConfidence(riskInput, weatherResult.stale);
@@ -323,15 +328,15 @@ export async function runRiskCalculation(
       });
 
       // Step 8: Generate alerts for severity ≥ 'Alto' (Req 10.1), skipping duplicates
-      const isAlertLevel = ['Alto', 'Muy Alto', 'Extremo'].includes(riskLevel);
-      const duplicate = isAlertLevel && isDuplicateAlert(recentAlerts, mapRiskLevelToSeverity(riskLevel));
+      const isAlertLevel = ['Alto', 'Muy Alto', 'Extremo'].includes(alertLevel);
+      const duplicate = isAlertLevel && isDuplicateAlert(recentAlerts, mapRiskLevelToSeverity(alertLevel));
       if (duplicate) alertsSuppressed++;
 
       if (isAlertLevel && !duplicate) {
         const now = new Date().toISOString();
         const nowEpoch = Math.floor(Date.now() / 1000);
         const alertId = `${province}-${Date.now()}`;
-        const severity = mapRiskLevelToSeverity(riskLevel);
+        const severity = mapRiskLevelToSeverity(alertLevel);
         const centroid = getProvinceCentroid(province);
 
         const alertItem: AlertItem = {
