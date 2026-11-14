@@ -349,8 +349,9 @@ export async function runRiskCalculation(
           TTL: nowEpoch + TTL_ALERTS_SECONDS,
         };
 
-        await deps.putAlert(alertItem);
+        // Publish first: a persisted-but-unpublished alert would suppress the retry via dedup.
         await deps.publishToSNS(JSON.stringify(alertItem), alertTopicArn);
+        await deps.putAlert(alertItem);
         alertsGenerated++;
       }
     } catch (error) {
