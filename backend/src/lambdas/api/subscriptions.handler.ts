@@ -72,14 +72,9 @@ async function putSubscriptionDefault(item: SubscriptionItem): Promise<void> {
       }),
     );
   } catch (error) {
-    if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
-    // Verified subscription: stage the new preference, applied once the email link is confirmed.
-    await docClient.send(new UpdateCommand({
-      TableName: TABLE_NAME,
-      Key: { PK: item.PK, SK: item.SK },
-      UpdateExpression: 'SET pendingMinSeverity = :sev, pendingGSI1SK = :gsi1sk',
-      ExpressionAttributeValues: { ':sev': item.minSeverity, ':gsi1sk': item.GSI1SK },
-    }));
+    // Verified subscription: the new minSeverity travels with the token and is applied on confirmation.
+    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return;
+    throw error;
   }
 }
 
@@ -100,16 +95,19 @@ const defaultVerifierDeps: VerifierDependencies = {
       Key: { PK: `VERIFY#${token}`, SK: `EMAIL#${email}` },
     }));
   },
-  markSubscriptionsVerified: async (email: string, provinces: string[]) => {
+  markSubscriptionsVerified: async (email: string, provinces: string[], minSeverity?: string) => {
     for (const province of provinces) {
       await docClient.send(new UpdateCommand({
         TableName: TABLE_NAME,
         Key: { PK: `SUB#${email}`, SK: `PROV#${province}` },
-        UpdateExpression:
-          'SET verified = :v, minSeverity = if_not_exists(pendingMinSeverity, minSeverity), ' +
-          'GSI1SK = if_not_exists(pendingGSI1SK, GSI1SK) REMOVE #ttl, pendingMinSeverity, pendingGSI1SK',
+        UpdateExpression: minSeverity
+          ? 'SET verified = :v, minSeverity = :sev, GSI1SK = :gsi1sk REMOVE #ttl'
+          : 'SET verified = :v REMOVE #ttl',
         ExpressionAttributeNames: { '#ttl': 'TTL' },
-        ExpressionAttributeValues: { ':v': true },
+        ExpressionAttributeValues: {
+          ':v': true,
+          ...(minSeverity ? { ':sev': minSeverity, ':gsi1sk': `SEVERITY#${minSeverity}` } : {}),
+        },
       }));
     }
   },
@@ -254,7 +252,7 @@ export function createSubscriptionsHandler(customDeps: Partial<SubscriptionsDeps
       }
 
       // Initiate email verification
-      await initiateVerification(email, provinces, deps.verifierDeps);
+      await initiateVerification(email, provinces, deps.verifierDeps, minSeverity);
 
       logger.info('Subscription created, verification pending', {
         subscriptionId,

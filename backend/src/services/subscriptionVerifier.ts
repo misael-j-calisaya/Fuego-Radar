@@ -35,6 +35,8 @@ export interface VerificationToken {
   subscriptionPK: string;
   /** Province list for the subscription */
   provinces: string[];
+  /** Minimum severity requested with this token; applied only when this token is confirmed */
+  minSeverity?: string;
   /** Email of the subscriber */
   email: string;
   /** Token string */
@@ -61,7 +63,7 @@ export interface VerifierDependencies {
   persistToken: (item: VerificationToken) => Promise<void>;
   getToken: (token: string, email: string) => Promise<VerificationToken | null>;
   deleteToken: (token: string, email: string) => Promise<void>;
-  markSubscriptionsVerified: (email: string, provinces: string[]) => Promise<void>;
+  markSubscriptionsVerified: (email: string, provinces: string[], minSeverity?: string) => Promise<void>;
   sendVerificationEmail: (request: VerificationEmailRequest) => Promise<void>;
 }
 
@@ -89,6 +91,7 @@ export async function initiateVerification(
   email: string,
   provinces: string[],
   deps: VerifierDependencies,
+  minSeverity?: string,
 ): Promise<{ token: string }> {
   const token = generateToken();
   const now = new Date();
@@ -99,6 +102,7 @@ export async function initiateVerification(
     SK: `EMAIL#${email}`,
     subscriptionPK: `SUB#${email}`,
     provinces,
+    ...(minSeverity ? { minSeverity } : {}),
     email,
     token,
     createdAt: now.toISOString(),
@@ -158,7 +162,7 @@ export async function confirmVerification(
   }
 
   // Mark subscriptions as verified
-  await deps.markSubscriptionsVerified(email, tokenItem.provinces);
+  await deps.markSubscriptionsVerified(email, tokenItem.provinces, tokenItem.minSeverity);
 
   // Delete the token (single use)
   await deps.deleteToken(token, email);
