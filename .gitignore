@@ -34,3 +34,6 @@ cdk.context.json
 .env
 .env.*
 !.env.example
+
+# FIRMS raw payload audit logs written by the local simulator
+backend/data/raw/

@@ -25,7 +25,7 @@ aws ssm put-parameter --name "/fuegoradar/prod/FIRMS_MAP_KEY" --type "SecureStri
 
 ## 2. Ingestion Lambda Environment & Permissions
 
-The AWS CDK stack is configured in [fire-risk-engine-stack.ts](file:///d:/APPS/FuegoRadar/infrastructure/lib/fire-risk-engine-stack.ts) to:
+The AWS CDK stack is configured in [`infrastructure/lib/fire-risk-engine-stack.ts`](infrastructure/lib/fire-risk-engine-stack.ts) to:
 1. Inject the SSM Parameter path name (`/fuegoradar/prod/FIRMS_MAP_KEY`) into the Ingestion Lambda's environment variables as `FIRMS_MAP_KEY_SSM_NAME`.
 2. Grant the Ingestion Lambda's execution IAM role `ssm:GetParameter` permission strictly for that parameter ARN, ensuring zero-trust least-privilege security.
 3. Automatically decrypt the `SecureString` at runtime using the default SSM service KMS key.
