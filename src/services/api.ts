@@ -356,7 +356,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         ...init.headers,
       },
     });
-    const body = await response.json().catch(() => null);
+    const isJson = (response.headers.get('content-type') ?? '').includes('application/json');
+    const body = isJson ? await response.json().catch(() => null) : null;
+    if (response.ok && body === null) {
+      throw new ApiError('Respuesta inesperada del servidor', response.status);
+    }
     if (!response.ok) {
       const message = (body && (body.message || body.error)) || `HTTP ${response.status}`;
       throw new ApiError(String(message), response.status);
