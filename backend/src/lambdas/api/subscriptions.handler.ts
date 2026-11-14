@@ -58,7 +58,7 @@ export interface SubscriptionsDeps {
 
 const sesClient = new SESClient({});
 const FROM_EMAIL = process.env.FROM_EMAIL ?? 'alertas@fuegoradar.ar';
-const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL ?? 'https://api.fuegoradar.ar/subscriptions/verify';
+const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL ?? 'https://fuegoradar.ar/';
 
 async function putSubscriptionDefault(item: SubscriptionItem): Promise<void> {
   await docClient.send(
@@ -95,7 +95,7 @@ const defaultVerifierDeps: VerifierDependencies = {
     }
   },
   sendVerificationEmail: async (request) => {
-    const verifyUrl = `${VERIFY_BASE_URL}?token=${request.token}&email=${encodeURIComponent(request.email)}`;
+    const verifyUrl = `${VERIFY_BASE_URL}?token=${request.token}&email=${encodeURIComponent(request.to)}`;
     await sesClient.send(new SendEmailCommand({
       Source: FROM_EMAIL,
       Destination: { ToAddresses: [request.to] },
@@ -230,7 +230,7 @@ export function createSubscriptionsHandler(customDeps: Partial<SubscriptionsDeps
           createdAt,
         };
         // Add TTL for automatic cleanup of unverified subscriptions
-        (item as any).TTL = unverifiedTTL;
+        (item as typeof item & { TTL?: number }).TTL = unverifiedTTL;
         await deps.putSubscription(item);
       }
 
@@ -261,7 +261,7 @@ export function createVerifyHandler(customDeps: Partial<SubscriptionsDeps> = {})
   const deps = { ...defaultDeps, ...customDeps };
   return async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
     try {
-      const validation = validateVerifyRequest(event.queryStringParameters);
+      const validation = validateVerifyRequest(event.queryStringParameters ?? null);
       if (!validation.valid) {
         return badRequest(validation.message);
       }

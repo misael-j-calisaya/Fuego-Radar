@@ -3,12 +3,13 @@ import { handler as riskProvincesHandler } from './api/riskProvinces.handler.js'
 import { handler as riskZonesHandler } from './api/riskZones.handler.js';
 import { handler as hotspotsHandler } from './api/hotspots.handler.js';
 import { handler as alertsHandler } from './api/alerts.handler.js';
-import { handler as subscriptionsHandler } from './api/subscriptions.handler.js';
+import { handler as subscriptionsHandler, verifyHandler } from './api/subscriptions.handler.js';
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from './api/apiUtils.js';
 
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const path = (event as any).path || '';
-  const httpMethod = (event as any).httpMethod || '';
+  const routed = event as APIGatewayProxyEvent & { path?: string; httpMethod?: string };
+  const path = routed.path || '';
+  const httpMethod = routed.httpMethod || '';
 
   console.log(`[Router] Routing request: ${httpMethod} ${path}`);
 
@@ -23,6 +24,8 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return await hotspotsHandler(event);
     } else if (path.endsWith('/alerts') && httpMethod === 'GET') {
       return await alertsHandler(event);
+    } else if (path.endsWith('/subscriptions/verify') && httpMethod === 'GET') {
+      return await verifyHandler(event);
     } else if (path.endsWith('/subscriptions') && httpMethod === 'POST') {
       return await subscriptionsHandler(event);
     } else {

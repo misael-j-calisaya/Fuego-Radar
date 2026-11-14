@@ -9,7 +9,6 @@
 
 import { randomBytes } from 'node:crypto';
 import { createLogger } from '../shared/logger.js';
-import type { SubscriptionItem } from '../shared/types.js';
 
 const logger = createLogger('SubscriptionVerifier');
 

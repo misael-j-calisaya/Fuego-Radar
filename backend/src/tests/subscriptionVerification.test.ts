@@ -144,7 +144,7 @@ describe('Subscription created as unverified', () => {
 
 describe('Verification token generated', () => {
   it('initiateVerification creates and persists a token', async () => {
-    let persistedToken: VerificationToken | null = null;
+    let persistedToken = null as VerificationToken | null;
 
     const deps = makeMockVerifierDeps({
       persistToken: async (item) => { persistedToken = item; },
@@ -168,7 +168,7 @@ describe('Verification token generated', () => {
 
 describe('Verification email sent', () => {
   it('sends email with token to subscriber', async () => {
-    let emailSent: VerificationEmailRequest | null = null;
+    let emailSent = null as VerificationEmailRequest | null;
 
     const deps = makeMockVerifierDeps({
       sendVerificationEmail: async (req) => { emailSent = req; },

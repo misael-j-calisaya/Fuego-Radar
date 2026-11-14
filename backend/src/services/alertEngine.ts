@@ -79,7 +79,7 @@ export class AlertEngine {
     // Check if there are hotspots in Entre Ríos / Santa Fe (Parana delta)
     const deltaHotspots = hotspots.filter(h => h.province === 'Entre Ríos' || h.province === 'Santa Fe');
     if (deltaHotspots.length > 0) {
-      const lead = deltaHotspots[0];
+      const _lead = deltaHotspots[0];
       alerts.push({
         id: 'alert-delta-smoke',
         title: 'Alerta por Humo en Gran Rosario',

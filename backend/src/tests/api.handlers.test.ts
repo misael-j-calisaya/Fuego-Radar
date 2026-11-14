@@ -12,7 +12,12 @@ import { createRiskZonesHandler } from '../lambdas/api/riskZones.handler.js';
 import { createHotspotsHandler } from '../lambdas/api/hotspots.handler.js';
 import { createAlertsHandler } from '../lambdas/api/alerts.handler.js';
 import { createSubscriptionsHandler } from '../lambdas/api/subscriptions.handler.js';
-import { handler as healthHandler } from '../lambdas/api/health.handler.js';
+import { createHealthHandler } from '../lambdas/api/health.handler.js';
+
+const healthHandler = createHealthHandler({
+  getLatestIngestionMeta: async () => null,
+  getRiskScores: async () => [],
+});
 import type { APIGatewayProxyEvent } from '../lambdas/api/apiUtils.js';
 import type { RiskScoreItem, RiskZoneItem, HotspotItem, AlertItem } from '../shared/types.js';
 
@@ -392,8 +397,9 @@ test('Health Handler', async (t) => {
 
     assert.strictEqual(result.statusCode, 200);
     const body = JSON.parse(result.body);
-    assert.strictEqual(body.status, 'healthy');
-    assert.strictEqual(body.version, '1.0.0');
+    assert.ok(['healthy', 'degraded'].includes(body.status));
+    assert.ok(body.services);
+    assert.strictEqual(typeof body.version, 'string');
     assert.ok(body.timestamp);
     // Verify timestamp is ISO 8601
     assert.ok(!isNaN(Date.parse(body.timestamp)));

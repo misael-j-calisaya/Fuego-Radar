@@ -35,10 +35,10 @@ const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
 const API_KEY_PATTERN = /\b([A-Za-z0-9]{32,})\b/g;
 
 /** Matches bearer/token patterns */
-const TOKEN_PATTERN = /(?:bearer\s+|token[=:]\s*)[A-Za-z0-9._\-]+/gi;
+const TOKEN_PATTERN = /(?:bearer\s+|token[=:]\s*)[A-Za-z0-9._-]+/gi;
 
 /** Matches FIRMS MAP KEY patterns (env variable values) */
-const FIRMS_KEY_PATTERN = /(?:FIRMS_MAP_KEY|firms_map_key|api[_-]?key)[=:]\s*['"]?([A-Za-z0-9._\-]+)['"]?/gi;
+const FIRMS_KEY_PATTERN = /(?:FIRMS_MAP_KEY|firms_map_key|api[_-]?key)[=:]\s*['"]?([A-Za-z0-9._-]+)['"]?/gi;
 
 /** Matches coordinate pairs that might be subscriber locations */
 const COORDINATE_PAIR_PATTERN = /(?:lat(?:itude)?|lng|lon(?:gitude)?)["\s]*[=:]\s*-?\d+\.\d{4,}/gi;

@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { FirmsIngestionService } from '../../services/firmsIngestion.js';
-import { WeatherClient } from '../../services/weatherClient.js';
 import { RiskEngine, DangerLevel } from '../../services/riskEngine.js';
 
 export interface ProvinceRisk {

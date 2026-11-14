@@ -104,7 +104,7 @@ describe('Integration: Ingestion Pipeline', () => {
         };
       },
       initGeocoder: () => {},
-      geocode: (lat: number, lng: number) => {
+      geocode: (lat: number, _lng: number) => {
         // Simple mock geocoder based on known coordinates
         if (lat > -32 && lat < -31) return 'Córdoba';
         if (lat > -35 && lat < -34) return 'Buenos Aires';
@@ -172,7 +172,7 @@ describe('Integration: Ingestion Pipeline', () => {
   });
 
   it('pipeline handles FIRMS API failure gracefully — records fallback metadata', async () => {
-    let metaWritten: IngestionMetaItem | null = null;
+    let metaWritten = null as IngestionMetaItem | null;
 
     const deps: IngestionDependencies = {
       fetchFirms: async () => ({
@@ -183,7 +183,7 @@ describe('Integration: Ingestion Pipeline', () => {
       saveToS3: async () => {},
       normalize: () => ({ hotspots: [], rawEntries: 0, discarded: 0, discardReasons: [] }),
       initGeocoder: () => {},
-      geocode: () => null,
+      geocode: () => 'Buenos Aires',
       deduplicate: (h: NormalizedHotspot[]) => ({
         hotspots: h,
         inputCount: 0,
@@ -233,7 +233,7 @@ describe('Integration: Ingestion Pipeline', () => {
         outputCount: 2,
         discardedCount: 1,
         duplicateCount: 1,
-        discardReasons: ['spatial_temporal_duplicate'],
+        discardReasons: [{ id: 'h2', reason: 'spatial_temporal_duplicate' }],
       }),
       persistHotspots: async (items: HotspotItem[]) => {
         persistedCount = items.length;
@@ -311,21 +311,20 @@ describe('Integration: Risk Calculation Pipeline', () => {
           rain24h: 0,              // No rain
         },
         stale: false,
+        province: 'Test',
+        fetchedAt: new Date().toISOString(),
       }),
-      calculateFWI: (weather) => ({
-        success: true as const,
-        fwi: 82,
-        errors: [],
-      }),
-      evaluateRisk: (input) => ({
+      calculateFWI: (_weather) => ({ success: true as const, result: { fwiScore: 82, dangerLevel: 'Alto' as const, explanation: 'test' } }),
+      evaluateRisk: (_input) => ({
         riskScore: 85,
         riskLevel: 'Extremo' as const,
+        contributingFactors: [],
         explanation: 'Temperatura extrema (38°C), humedad crítica (15%), viento fuerte (45 km/h), sin precipitaciones, 2 focos activos.',
         confidenceScore: 90,
       }),
       calculateConfidence: (_input, _stale) => ({
         confidenceScore: 88,
-        factors: [],
+        factors: [], weatherStale: false,
       }),
       putRiskScore: async (item: RiskScoreItem) => {
         persisted.riskScores.push(item);
@@ -385,10 +384,12 @@ describe('Integration: Risk Calculation Pipeline', () => {
       fetchWeather: async () => ({
         data: { temperature: 25, relativeHumidity: 60, windSpeed: 10, windDir: 'S', rain24h: 5 },
         stale: false,
+        province: 'Test',
+        fetchedAt: new Date().toISOString(),
       }),
-      calculateFWI: () => ({ success: true as const, fwi: 20, errors: [] }),
-      evaluateRisk: () => ({ riskScore: 15, riskLevel: 'Bajo' as const, explanation: 'Low risk', confidenceScore: 90 }),
-      calculateConfidence: () => ({ confidenceScore: 90, factors: [] }),
+      calculateFWI: () => ({ success: true as const, result: { fwiScore: 20, dangerLevel: 'Alto' as const, explanation: 'test' } }),
+      evaluateRisk: () => ({ riskScore: 15, riskLevel: 'Bajo' as const, explanation: 'Low risk', contributingFactors: [] }),
+      calculateConfidence: () => ({ confidenceScore: 90, factors: [], weatherStale: false }),
       putRiskScore: async (item: RiskScoreItem) => { persisted.push(item); },
       putAlert: async () => {},
       publishToSNS: async () => {},
@@ -422,15 +423,18 @@ describe('Integration: Risk Calculation Pipeline', () => {
       fetchWeather: async () => ({
         data: { temperature: 22, relativeHumidity: 55, windSpeed: 12, windDir: 'O', rain24h: 2 },
         stale: false,
+        province: 'Test',
+        fetchedAt: new Date().toISOString(),
       }),
-      calculateFWI: () => ({ success: true as const, fwi: 25, errors: [] }),
+      calculateFWI: () => ({ success: true as const, result: { fwiScore: 25, dangerLevel: 'Alto' as const, explanation: 'test' } }),
       evaluateRisk: () => ({
         riskScore: 35,
         riskLevel: 'Medio' as const,  // Below 'Alto' threshold
+        contributingFactors: [],
         explanation: 'Moderate conditions',
         confidenceScore: 85,
       }),
-      calculateConfidence: () => ({ confidenceScore: 85, factors: [] }),
+      calculateConfidence: () => ({ confidenceScore: 85, factors: [], weatherStale: false }),
       putRiskScore: async () => {},
       putAlert: async (item: AlertItem) => { alerts.push(item); },
       publishToSNS: async (msg: string) => { snsMessages.push(msg); },

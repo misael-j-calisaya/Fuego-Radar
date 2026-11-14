@@ -30,6 +30,7 @@ export function isPointInPolygon(point: [number, number], vs: [number, number][]
 }
 
 // Check polygon or multipolygon containment
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- GeoJSON parsed at runtime
 export function isPointInGeometry(lng: number, lat: number, geometry: any): boolean {
   const point: [number, number] = [lng, lat];
   
@@ -53,6 +54,7 @@ export function isPointInGeometry(lng: number, lat: number, geometry: any): bool
 let ingestedHotspotsStore: RawHotspot[] = [];
 
 export class FirmsIngestionService {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GeoJSON parsed at runtime
   private static provincesGeoJson: any = null;
 
   /**
@@ -200,7 +202,7 @@ export class FirmsIngestionService {
       }
 
       const instrument = cols[instrumentIdx] || 'VIIRS';
-      const sat = cols[satelliteIdx] || 'SNPP';
+      const _sat = cols[satelliteIdx] || 'SNPP';
 
       const hotspotId = `firms-${lat.toFixed(4)}-${lng.toFixed(4)}-${cols[dateIdx]}-${timeStr}`;
 

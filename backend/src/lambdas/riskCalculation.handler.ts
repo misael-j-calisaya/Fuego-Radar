@@ -9,7 +9,23 @@
  */
 
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
-import { queryHotspotsByProvince, putRiskScore, putAlert } from '../data/repository.js';
+import {
+  queryHotspotsByProvince,
+  putRiskScore,
+  putAlert,
+  getRiskScore,
+  queryAlertsByProvince,
+  putRiskZones,
+} from '../data/repository.js';
+import {
+  computeTrend,
+  updateDailyHotspotCounts,
+  historicalFireCount,
+  hasRecentCriticalAlert,
+  isDuplicateAlert,
+  buildRiskZones,
+} from '../services/riskContext.js';
+import type { ProvinceZoneInput } from '../services/riskContext.js';
 import { fetchWeatherForProvince, getProvinceCentroid } from '../services/weatherApiClient.js';
 import { calculateFWI } from '../services/fwiCalculator.js';
 import { evaluateFireRisk, calculateConfidence } from '../services/riskEvaluator.js';
@@ -23,6 +39,7 @@ import type {
   Region,
   ClimateNormal,
   RiskInput,
+  RiskZoneItem,
 } from '../shared/types.js';
 import type { WeatherFetchResult } from '../services/weatherApiClient.js';
 import type { FWICalculationResult } from '../services/fwiCalculator.js';
@@ -44,6 +61,8 @@ export interface RiskCalculationResult {
   body: {
     provincesProcessed: number;
     alertsGenerated: number;
+    alertsSuppressed: number;
+    riskZonesWritten: number;
     staleWeatherCount: number;
     timestamp: string;
     durationMs: number;
@@ -60,6 +79,12 @@ export interface RiskCalculationDependencies {
   putRiskScore: typeof putRiskScore;
   putAlert: typeof putAlert;
   publishToSNS: (message: string, topicArn: string) => Promise<void>;
+  /** Previous score for trend + rolling fire history (optional for backwards compatibility) */
+  getPreviousRiskScore?: (province: string) => Promise<RiskScoreItem | null>;
+  /** Recent alerts for critical-alert factor and de-duplication */
+  queryRecentAlerts?: (province: string) => Promise<AlertItem[]>;
+  /** Persists the risk-zone grid served by GET /risk/zones */
+  putRiskZones?: (zones: RiskZoneItem[]) => Promise<void>;
 }
 
 // ============================================
@@ -181,6 +206,9 @@ export async function runRiskCalculation(
   const startTime = Date.now();
   let provincesProcessed = 0;
   let alertsGenerated = 0;
+  let alertsSuppressed = 0;
+  let riskZonesWritten = 0;
+  const zoneInputs: ProvinceZoneInput[] = [];
   let staleWeatherCount = 0;
 
   const { today, yesterday } = getDateStrings();
@@ -194,6 +222,16 @@ export async function runRiskCalculation(
         deps.queryHotspotsByProvince(province, yesterday),
       ]);
       const allHotspots = [...hotspotsToday, ...hotspotsYesterday];
+
+      const [previousScore, recentAlerts] = await Promise.all([
+        deps.getPreviousRiskScore ? deps.getPreviousRiskScore(province).catch(() => null) : Promise.resolve(null),
+        deps.queryRecentAlerts ? deps.queryRecentAlerts(province).catch(() => [] as AlertItem[]) : Promise.resolve([] as AlertItem[]),
+      ]);
+      const dailyHotspotCounts = updateDailyHotspotCounts(
+        previousScore?.dailyHotspotCounts,
+        today,
+        hotspotsToday.length,
+      );
 
       // Step 3: Fetch weather for this province
       const weatherResult: WeatherFetchResult = await deps.fetchWeather(province);
@@ -224,9 +262,9 @@ export async function runRiskCalculation(
         province,
         region,
         recentHotspotsCount: hotspotCount,
-        historicalFireCount: 0, // Placeholder for now
+        historicalFireCount: historicalFireCount(dailyHotspotCounts, today),
         climateNormal,
-        hasCriticalAlert: false, // Placeholder for now
+        hasCriticalAlert: hasRecentCriticalAlert(recentAlerts),
       };
 
       const riskResult = deps.evaluateRisk(riskInput);
@@ -261,18 +299,35 @@ export async function runRiskCalculation(
         riskScore,
         riskLevel,
         activeHotspotsCount: hotspotCount,
-        trend: 'stable', // Simplified for now
+        trend: computeTrend(previousScore?.riskScore, riskScore),
         explanation,
         confidenceScore,
         lastUpdated: new Date().toISOString(),
         weatherStale: weatherResult.stale,
+        fwi: fwiResult.result.fwiScore,
+        temperature: weatherResult.data.temperature,
+        relativeHumidity: weatherResult.data.relativeHumidity,
+        windSpeed: weatherResult.data.windSpeed,
+        rain24h: weatherResult.data.rain24h ?? 0,
+        dailyHotspotCounts,
       };
 
       await deps.putRiskScore(riskScoreItem);
       provincesProcessed++;
 
-      // Step 8: Generate alerts for severity ≥ 'Alto' (Req 10.1)
-      if (['Alto', 'Muy Alto', 'Extremo'].includes(riskLevel)) {
+      zoneInputs.push({
+        province,
+        fwi: fwiResult.result.fwiScore,
+        centroid: getProvinceCentroid(province) ?? undefined,
+        hotspots: allHotspots,
+      });
+
+      // Step 8: Generate alerts for severity ≥ 'Alto' (Req 10.1), skipping duplicates
+      const isAlertLevel = ['Alto', 'Muy Alto', 'Extremo'].includes(riskLevel);
+      const duplicate = isAlertLevel && isDuplicateAlert(recentAlerts, mapRiskLevelToSeverity(riskLevel));
+      if (duplicate) alertsSuppressed++;
+
+      if (isAlertLevel && !duplicate) {
         const now = new Date().toISOString();
         const nowEpoch = Math.floor(Date.now() / 1000);
         const alertId = `${province}-${Date.now()}`;
@@ -307,6 +362,19 @@ export async function runRiskCalculation(
     }
   }
 
+  if (deps.putRiskZones && zoneInputs.length > 0) {
+    try {
+      const zones = buildRiskZones(zoneInputs);
+      await deps.putRiskZones(zones);
+      riskZonesWritten = zones.length;
+    } catch (error) {
+      console.error(
+        '[RiskCalculation] Failed to persist risk zones:',
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
   const durationMs = Date.now() - startTime;
 
   return {
@@ -314,6 +382,8 @@ export async function runRiskCalculation(
     body: {
       provincesProcessed,
       alertsGenerated,
+      alertsSuppressed,
+      riskZonesWritten,
       staleWeatherCount,
       timestamp: new Date().toISOString(),
       durationMs,
@@ -349,6 +419,9 @@ export async function handler(_event: RiskCalculationEvent): Promise<RiskCalcula
     putRiskScore,
     putAlert,
     publishToSNS,
+    getPreviousRiskScore: getRiskScore,
+    queryRecentAlerts: queryAlertsByProvince,
+    putRiskZones,
   };
 
   return runRiskCalculation(deps);
