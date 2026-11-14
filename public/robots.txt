@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://d2xtb0pdutpecz.cloudfront.net/sitemap.xml

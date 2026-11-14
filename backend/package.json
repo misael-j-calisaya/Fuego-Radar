@@ -1,0 +1,28 @@
+{
+  "name": "fuegoradar-backend",
+  "version": "1.0.0",
+  "description": "Simulated serverless backend for Alerta Fuego Argentina",
+  "main": "src/server.ts",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "test": "tsx --test src/tests/services.test.ts",
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1068.0",
+    "@aws-sdk/client-s3": "^3.1068.0",
+    "@aws-sdk/client-ses": "^3.1068.0",
+    "@aws-sdk/client-sns": "^3.1068.0",
+    "@aws-sdk/client-ssm": "^3.1068.0",
+    "@aws-sdk/lib-dynamodb": "^3.1068.0",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.2",
+    "fast-check": "^3.19.0",
+    "tsx": "^4.15.2",
+    "typescript": "^5.4.5"
+  }
+}
