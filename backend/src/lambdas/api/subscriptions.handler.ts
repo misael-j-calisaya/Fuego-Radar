@@ -72,8 +72,14 @@ async function putSubscriptionDefault(item: SubscriptionItem): Promise<void> {
       }),
     );
   } catch (error) {
-    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return;
-    throw error;
+    if ((error as { name?: string }).name !== 'ConditionalCheckFailedException') throw error;
+    // Verified subscription: stage the new preference, applied once the email link is confirmed.
+    await docClient.send(new UpdateCommand({
+      TableName: TABLE_NAME,
+      Key: { PK: item.PK, SK: item.SK },
+      UpdateExpression: 'SET pendingMinSeverity = :sev, pendingGSI1SK = :gsi1sk',
+      ExpressionAttributeValues: { ':sev': item.minSeverity, ':gsi1sk': item.GSI1SK },
+    }));
   }
 }
 
@@ -99,7 +105,9 @@ const defaultVerifierDeps: VerifierDependencies = {
       await docClient.send(new UpdateCommand({
         TableName: TABLE_NAME,
         Key: { PK: `SUB#${email}`, SK: `PROV#${province}` },
-        UpdateExpression: 'SET verified = :v REMOVE #ttl',
+        UpdateExpression:
+          'SET verified = :v, minSeverity = if_not_exists(pendingMinSeverity, minSeverity), ' +
+          'GSI1SK = if_not_exists(pendingGSI1SK, GSI1SK) REMOVE #ttl, pendingMinSeverity, pendingGSI1SK',
         ExpressionAttributeNames: { '#ttl': 'TTL' },
         ExpressionAttributeValues: { ':v': true },
       }));
