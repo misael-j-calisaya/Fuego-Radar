@@ -52,7 +52,12 @@ export function createRiskZonesHandler(deps: RiskZonesDeps = defaultDeps) {
     }
 
     try {
-      const items = await deps.queryRiskZones();
+      const nowEpoch = Math.floor(Date.now() / 1000);
+      const live = (await deps.queryRiskZones()).filter(
+        (item) => typeof item.TTL !== 'number' || item.TTL > nowEpoch,
+      );
+      const latest = live.reduce((max, item) => (item.lastUpdated > max ? item.lastUpdated : max), '');
+      const items = live.filter((item) => item.lastUpdated === latest);
 
       const formatted = items.map((item) => ({
         id: item.SK.replace('GRID#', ''),
