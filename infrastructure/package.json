@@ -8,7 +8,7 @@
     "synth": "cdk synth",
     "deploy": "cdk deploy",
     "diff": "cdk diff",
-    "pretest": "if not exist \"..\\backend\\dist\\lambdas\" mkdir \"..\\backend\\dist\\lambdas\"",
+    "pretest": "node -e \"require('fs').mkdirSync('../backend/dist/lambdas',{recursive:true})\"",
     "test": "jest"
   },
   "dependencies": {
