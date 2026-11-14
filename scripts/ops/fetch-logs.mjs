@@ -1,6 +1,6 @@
 import { CloudWatchLogsClient, DescribeLogStreamsCommand, GetLogEventsCommand } from "@aws-sdk/client-cloudwatch-logs";
 
-const client = new CloudWatchLogsClient({ region: "us-east-1" });
+const client = new CloudWatchLogsClient({ region: process.env.AWS_REGION ?? "us-east-1" });
 
 async function getLogs() {
   const logGroupName = "/aws/lambda/FireRiskEngine-Ingestion";

@@ -10,7 +10,12 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { handler as healthHandler } from '../lambdas/api/health.handler.js';
+import { createHealthHandler } from '../lambdas/api/health.handler.js';
+
+const healthHandler = createHealthHandler({
+  getLatestIngestionMeta: async () => null,
+  getRiskScores: async () => [],
+});
 import { createRiskProvincesHandler } from '../lambdas/api/riskProvinces.handler.js';
 import { createRiskZonesHandler } from '../lambdas/api/riskZones.handler.js';
 import { createHotspotsHandler } from '../lambdas/api/hotspots.handler.js';
@@ -49,9 +54,10 @@ describe('GET /health', () => {
     const response = await healthHandler(makeEvent({ headers: {} }));
     assert.strictEqual(response.statusCode, 200);
     const body = JSON.parse(response.body);
-    assert.strictEqual(body.status, 'healthy');
+    assert.ok(['healthy', 'degraded'].includes(body.status));
+    assert.ok(body.services);
     assert.ok(body.timestamp);
-    assert.strictEqual(body.version, '1.0.0');
+    assert.strictEqual(typeof body.version, 'string');
   });
 
   it('includes Content-Type and CORS headers', async () => {
@@ -119,7 +125,7 @@ describe('GET /risk/provinces', () => {
 describe('GET /risk/zones', () => {
   const mockZones: RiskZoneItem[] = [{
     PK: 'RISK#ZONES', SK: 'GRID#cell-001' as `GRID#${string}`,
-    GSI1PK: 'PROVINCE#Córdoba' as `PROVINCE#${string}`, GSI1SK: 'FWI#060' as `FWI#${string}`,
+    GSI1PK: 'ZONEPROV#Córdoba' as `ZONEPROV#${string}`, GSI1SK: 'FWI#060' as `FWI#${string}`,
     bounds: [[-32, -65], [-31, -64]], fwi: 60, riskLevel: 'Alto',
     hotspotsInCell: 2, lastUpdated: '2024-01-15T15:00:00Z',
   }];

@@ -308,7 +308,7 @@ test('RiskCalculation Lambda Handler - 24 Provinces Validation', async (t) => {
     const { runRiskCalculation } = await import('../lambdas/riskCalculation.handler.js');
 
     const mockDeps = {
-      queryHotspotsByProvince: async (province: string, date: string) => {
+      queryHotspotsByProvince: async (_province: string, _date: string) => {
         return []; // No active hotspots
       },
       fetchWeather: async (province: string) => {
@@ -325,10 +325,10 @@ test('RiskCalculation Lambda Handler - 24 Provinces Validation', async (t) => {
           fetchedAt: new Date().toISOString(),
         };
       },
-      calculateFWI: (weather: any) => {
-        return { success: true, fwi: 30, errors: [] };
+      calculateFWI: (_weather: any) => {
+        return { success: true as const, result: { fwiScore: 30, dangerLevel: 'Alto' as const, explanation: 'test' } };
       },
-      evaluateRisk: (input: any) => {
+      evaluateRisk: (_input: any) => {
         return {
           riskScore: 25,
           riskLevel: 'Medio' as const,
@@ -336,7 +336,7 @@ test('RiskCalculation Lambda Handler - 24 Provinces Validation', async (t) => {
           contributingFactors: [],
         };
       },
-      calculateConfidence: (input: any, stale: boolean) => {
+      calculateConfidence: (_input: any, _stale?: boolean) => {
         return { confidenceScore: 92, factors: [], weatherStale: false };
       },
       putRiskScore: async (item: any) => {
@@ -345,7 +345,7 @@ test('RiskCalculation Lambda Handler - 24 Provinces Validation', async (t) => {
       putAlert: async (item: any) => {
         generatedAlerts.push(item);
       },
-      publishToSNS: async (message: string, topicArn: string) => {},
+      publishToSNS: async (_message: string, _topicArn: string) => {},
     };
 
     const result = await runRiskCalculation(mockDeps);

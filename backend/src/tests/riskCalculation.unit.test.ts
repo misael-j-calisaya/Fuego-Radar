@@ -8,7 +8,7 @@
  * Requirements: 3.1, 3.2, 3.9, 2.3
  */
 
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { runRiskCalculation } from '../lambdas/riskCalculation.handler.js';
@@ -45,6 +45,8 @@ function makeBaseDeps(overrides: Partial<RiskCalculationDependencies> = {}): Ris
     fetchWeather: async () => ({
       data: { temperature: 30, relativeHumidity: 30, windSpeed: 25, windDir: 'N', rain24h: 0 },
       stale: false,
+      province: 'Test',
+      fetchedAt: new Date().toISOString(),
     }),
     calculateFWI: () => ({ success: true as const, result: { fwiScore: 60, dangerLevel: 'Alto' as const, explanation: 'Alto' }, errors: [] }),
     evaluateRisk: () => ({
@@ -122,6 +124,8 @@ describe('Risk Calculation — stale weather', () => {
       fetchWeather: async () => ({
         data: { temperature: 28, relativeHumidity: 35, windSpeed: 20, windDir: 'N', rain24h: 0 },
         stale: true, // Stale!
+        province: 'Test',
+        fetchedAt: new Date().toISOString(),
       }),
     });
 
@@ -147,6 +151,8 @@ describe('Risk Calculation — confidence with stale weather', () => {
       fetchWeather: async () => ({
         data: { temperature: 25, relativeHumidity: 40, windSpeed: 15, windDir: 'O', rain24h: 0 },
         stale: true,
+        province: 'Test',
+        fetchedAt: new Date().toISOString(),
       }),
       calculateConfidence: (_input, stale) => {
         if (stale) confidenceCalledWithStale = true;
@@ -373,7 +379,6 @@ describe('Risk Calculation — SNS publish', () => {
 describe('Risk Calculation — error isolation', () => {
   it('continues processing other provinces when one fails', async () => {
     const persisted: RiskScoreItem[] = [];
-    let callCount = 0;
 
     const deps = makeBaseDeps({
       queryHotspotsByProvince: async (province) => {
@@ -382,11 +387,12 @@ describe('Risk Calculation — error isolation', () => {
         return [];
       },
       fetchWeather: async (province) => {
-        callCount++;
         if (province === 'Córdoba') throw new Error('Network timeout');
         return {
           data: { temperature: 30, relativeHumidity: 30, windSpeed: 20, windDir: 'N', rain24h: 0 },
           stale: false,
+          province,
+          fetchedAt: new Date().toISOString(),
         };
       },
       putRiskScore: async (item) => { persisted.push(item); },

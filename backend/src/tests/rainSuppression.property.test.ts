@@ -97,7 +97,7 @@ describe('Property: Rain suppression — heavy rain (>10mm)', () => {
           const noRainResult = evaluateFireRisk({ ...input, rain24h: 0 });
           const heavyRainResult = evaluateFireRisk({ ...input, rain24h: heavyRain });
 
-          const diff = noRainResult.riskScore - heavyRainResult.riskScore;
+          const _diff = noRainResult.riskScore - heavyRainResult.riskScore;
 
           // Due to clamping at [0, 100], the full 30-point suppression may not
           // be observable when the raw score far exceeds 100 (both clamp to 100)

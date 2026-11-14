@@ -14,8 +14,7 @@ import {
 } from '../lambdas/firmsIngestion.handler.js';
 import type { IngestionDependencies } from '../lambdas/firmsIngestion.handler.js';
 import type { FirmsApiResult } from '../services/firmsApiClient.js';
-import type { NormalizationResult, NormalizedHotspot } from '../services/csvNormalizer.js';
-import type { DeduplicationResult } from '../services/deduplicator.js';
+import type { NormalizedHotspot } from '../services/csvNormalizer.js';
 import type { HotspotItem, IngestionMetaItem } from '../shared/types.js';
 
 // ============================================

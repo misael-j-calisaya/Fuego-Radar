@@ -16,9 +16,6 @@ import type {
   WeatherData,
 } from '../shared/types.js';
 import type { WeatherFetchResult } from '../services/weatherApiClient.js';
-import type { FWICalculationResult } from '../services/fwiCalculator.js';
-import type { RiskEvaluationResult } from '../services/riskEvaluator.js';
-import type { ConfidenceResult } from '../services/riskEvaluator.js';
 
 // ============================================
 // Test Helpers
@@ -74,12 +71,12 @@ function staleWeatherResult(province: string): WeatherFetchResult {
 }
 
 function createMockDeps(overrides: Partial<RiskCalculationDependencies> = {}): RiskCalculationDependencies {
-  const now = new Date().toISOString();
+  const _now = new Date().toISOString();
 
   return {
     queryHotspotsByProvince: async (_province: string, _date: string) => [],
     fetchWeather: async (province: string) => freshWeatherResult(province),
-    calculateFWI: (weather: WeatherData) => ({
+    calculateFWI: (_weather: WeatherData) => ({
       success: true as const,
       result: { fwiScore: 55, dangerLevel: 'Alto' as const, explanation: 'Alto riesgo' },
     }),
@@ -304,7 +301,7 @@ test('Risk Calculation Handler Tests', async (t) => {
   await t.test('DynamoDB read failure — queryHotspotsByProvince throws → controlled error, continues other provinces', async () => {
     const today = new Date().toISOString().substring(0, 10);
     const hotspotDate = new Date().toISOString();
-    let provincesWithRiskScores: string[] = [];
+    const provincesWithRiskScores: string[] = [];
 
     const deps = createMockDeps({
       queryHotspotsByProvince: async (province: string, date: string) => {

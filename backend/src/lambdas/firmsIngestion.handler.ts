@@ -13,7 +13,12 @@ import { fetchFirmsData } from '../services/firmsApiClient.js';
 import { normalizeCsv } from '../services/csvNormalizer.js';
 import { initializeGeocoder, assignProvince } from '../services/geocoder.js';
 import { detectDuplicates } from '../services/deduplicator.js';
-import { putHotspots, putIngestionMeta } from '../data/repository.js';
+import {
+  putHotspots,
+  putIngestionMeta,
+  getFirmsFailureCount,
+  putFirmsFailureCount,
+} from '../data/repository.js';
 import {
   TTL_HOTSPOTS_SECONDS,
   TTL_INGESTION_META_SECONDS,
@@ -64,6 +69,9 @@ export interface IngestionDependencies {
   deduplicate: typeof detectDuplicates;
   persistHotspots: typeof putHotspots;
   persistMeta: typeof putIngestionMeta;
+  /** Persisted consecutive-failure counter (survives cold starts). Optional. */
+  loadFailureCount?: () => Promise<number>;
+  saveFailureCount?: (count: number) => Promise<void>;
 }
 
 // ============================================
@@ -113,6 +121,37 @@ async function saveRawCsvToS3(csvData: string, key: string): Promise<void> {
  * This function contains the core orchestration logic and is designed
  * for easy unit testing via dependency injection.
  */
+async function syncFailureCount(deps: IngestionDependencies): Promise<void> {
+  if (!deps.loadFailureCount) return;
+  try {
+    consecutiveFailures = await deps.loadFailureCount();
+  } catch (error) {
+    console.warn('[Ingestion] Could not load FIRMS failure state:', error instanceof Error ? error.message : error);
+  }
+}
+
+async function saveFailureCount(deps: IngestionDependencies): Promise<void> {
+  if (!deps.saveFailureCount) return;
+  try {
+    await deps.saveFailureCount(consecutiveFailures);
+  } catch (error) {
+    console.warn('[Ingestion] Could not save FIRMS failure state:', error instanceof Error ? error.message : error);
+  }
+}
+
+async function recordFirmsFailure(deps: IngestionDependencies): Promise<void> {
+  await syncFailureCount(deps);
+  consecutiveFailures++;
+  await saveFailureCount(deps);
+  await handleFailureMetrics(consecutiveFailures);
+}
+
+async function recordFirmsSuccess(deps: IngestionDependencies): Promise<void> {
+  const hadFailures = consecutiveFailures > 0 || Boolean(deps.loadFailureCount);
+  consecutiveFailures = 0;
+  if (hadFailures) await saveFailureCount(deps);
+}
+
 export async function runIngestionPipeline(
   deps: IngestionDependencies,
 ): Promise<IngestionHandlerResult> {
@@ -157,8 +196,7 @@ export async function runIngestionPipeline(
   } catch (error) {
     // Unexpected error from fetchFirms (should not happen, but handle gracefully)
     console.warn('[Ingestion] Unexpected error fetching FIRMS data:', error);
-    consecutiveFailures++;
-    await handleFailureMetrics(consecutiveFailures);
+    await recordFirmsFailure(deps);
     await writeMetadata(deps, 'FALLBACK_CACHE', startedAt, 0, 0, 0);
     return buildResult('FALLBACK_CACHE');
   }
@@ -166,14 +204,13 @@ export async function runIngestionPipeline(
   // Step 1b: Handle FIRMS API failure
   if (!firmsResult.success) {
     console.warn(`[Ingestion] FIRMS API failure: ${firmsResult.reason} - ${firmsResult.message}`);
-    consecutiveFailures++;
-    await handleFailureMetrics(consecutiveFailures);
+    await recordFirmsFailure(deps);
     await writeMetadata(deps, 'FALLBACK_CACHE', startedAt, 0, 0, 0);
     return buildResult('FALLBACK_CACHE');
   }
 
   // FIRMS succeeded — reset consecutive failures
-  consecutiveFailures = 0;
+  await recordFirmsSuccess(deps);
 
   const csvData = firmsResult.csvData;
 
@@ -354,6 +391,8 @@ export async function handler(_event: EventBridgeEvent): Promise<IngestionHandle
     deduplicate: detectDuplicates,
     persistHotspots: putHotspots,
     persistMeta: putIngestionMeta,
+    loadFailureCount: getFirmsFailureCount,
+    saveFailureCount: putFirmsFailureCount,
   };
 
   return runIngestionPipeline(deps);

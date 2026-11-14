@@ -1,32 +1,32 @@
 import { Request, Response } from 'express';
 
+const SEVERITIES = ['Bajo', 'Medio', 'Alto', 'Crítico'];
+
+// Local simulator: mirrors the production contract (email, provinces[], minSeverity)
+// without persisting anything or sending email.
 export default async function handler(req: Request, res: Response) {
-  try {
-    const { name, phone, email, province } = req.body;
+  const { email, provinces, minSeverity } = req.body ?? {};
 
-    // Basic input validation
-    if (!name || typeof name !== 'string' || name.trim() === '') {
-      return res.status(400).json({ error: 'Nombre es requerido' });
-    }
-    if (!phone || typeof phone !== 'string' || phone.trim() === '') {
-      return res.status(400).json({ error: 'Número de celular es requerido' });
-    }
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
-      return res.status(400).json({ error: 'Correo electrónico válido es requerido' });
-    }
-    if (!province || typeof province !== 'string' || province.trim() === '') {
-      return res.status(400).json({ error: 'Provincia es requerida' });
-    }
-
-    // Simulate database write / trigger event
-    console.log(`[Subscription Activated] User: ${name}, Contact: ${phone} | ${email}, Target: ${province}`);
-
-    res.status(201).json({
-      success: true,
-      message: `Suscripción activada con éxito. Recibirás alertas críticas para ${province} en el número ${phone} y correo ${email}.`
-    });
-  } catch (err) {
-    console.error('Error in subscriptions handler:', err);
-    res.status(500).json({ error: 'Failed to register subscription' });
+  if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Correo electrónico válido es requerido' });
   }
+  if (!Array.isArray(provinces) || provinces.length === 0 || provinces.some((p) => typeof p !== 'string')) {
+    return res.status(400).json({ error: 'Se requiere al menos una provincia' });
+  }
+  if (!SEVERITIES.includes(minSeverity)) {
+    return res.status(400).json({ error: `minSeverity debe ser uno de: ${SEVERITIES.join(', ')}` });
+  }
+
+  console.log(`[Local subscription] ${provinces.length} provincia(s), minSeverity=${minSeverity}`);
+  res.status(201).json({
+    message: 'Simulación local: en producción se enviaría un email de confirmación.',
+    status: 'pending_verification',
+  });
+}
+
+export async function verify(req: Request, res: Response) {
+  if (!req.query.token || !req.query.email) {
+    return res.status(400).json({ error: 'token y email son requeridos' });
+  }
+  res.status(200).json({ status: 'verified', message: 'Simulación local: suscripción confirmada.' });
 }

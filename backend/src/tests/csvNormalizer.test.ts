@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { normalizeCsv, type NormalizedHotspot, type NormalizationResult } from '../services/csvNormalizer.js';
+import { normalizeCsv } from '../services/csvNormalizer.js';
 
 // ============================================
 // Unit Tests for CSV Normalizer

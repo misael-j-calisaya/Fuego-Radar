@@ -37,8 +37,8 @@ describe('CloudWatch Observability (Task 9.2)', () => {
     for (const retention of retentionValues) {
       expect(retention).toBe(7);
     }
-    // Should have 4 Lambdas with log retention
-    expect(retentionValues.length).toBe(4);
+    // Should have 5 Lambdas with log retention
+    expect(retentionValues.length).toBe(5);
   });
 
   // --- FIRMS Consecutive Failures Alarm ---

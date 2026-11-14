@@ -252,12 +252,12 @@ function getHumidityDescription(relativeHumidity: number, points: number): strin
   return 'Humedad relativa del aire elevada que dificulta la ignición.';
 }
 
-function getWindDescription(windSpeed: number, points: number): string {
+function getWindDescription(windSpeed: number, _points: number): string {
   if (windSpeed > 30) return 'Vientos intensos registrados que facilitan la rápida propagación.';
   return 'Viento moderado que aporta oxígeno al frente de fuego.';
 }
 
-function getPrecipitationDescription(rain24h: number, points: number): string {
+function getPrecipitationDescription(rain24h: number, _points: number): string {
   if (rain24h > 10) return 'Lluvias copiosas en las últimas 24 horas humedecen el suelo de forma significativa.';
   return 'Precipitaciones leves que amortiguan temporalmente el peligro.';
 }

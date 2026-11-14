@@ -5,7 +5,7 @@
  * verified status), SES failure isolation, malformed message handling.
  */
 
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -18,7 +18,7 @@ import type {
   NotificationDependencies,
   EmailRequest,
 } from '../lambdas/notificationDispatcher.handler.js';
-import type { AlertItem, SubscriptionItem, AlertSeverity } from '../shared/types.js';
+import type { AlertItem, SubscriptionItem } from '../shared/types.js';
 
 // ============================================
 // Test Helpers

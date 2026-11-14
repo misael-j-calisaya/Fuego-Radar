@@ -265,12 +265,13 @@ export async function runNotificationDispatch(
 // ============================================
 
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { withRetry } from '../shared/retry.js';
 
 const sesClient = new SESClient({});
 const FROM_EMAIL = process.env.FROM_EMAIL ?? 'alertas@fuegoradar.ar';
 
 async function sendEmailViaSES(request: EmailRequest): Promise<void> {
-  await sesClient.send(
+  await withRetry(() => sesClient.send(
     new SendEmailCommand({
       Source: FROM_EMAIL,
       Destination: { ToAddresses: [request.to] },
@@ -279,7 +280,7 @@ async function sendEmailViaSES(request: EmailRequest): Promise<void> {
         Body: { Text: { Data: request.body, Charset: 'UTF-8' } },
       },
     }),
-  );
+  ));
 }
 
 const defaultDeps: NotificationDependencies = {

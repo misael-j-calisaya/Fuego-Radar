@@ -113,6 +113,13 @@ export class FireRiskEngineStack extends cdk.Stack {
     }));
 
     ingestionRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'DynamoDBReadIngestionState',
+      effect: iam.Effect.ALLOW,
+      actions: ['dynamodb:GetItem'],
+      resources: [this.table.tableArn],
+    }));
+
+    ingestionRole.addToPolicy(new iam.PolicyStatement({
       sid: 'S3PutRawCsv',
       effect: iam.Effect.ALLOW,
       actions: ['s3:PutObject'],
@@ -187,6 +194,34 @@ export class FireRiskEngineStack extends cdk.Stack {
       iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')
     );
 
+    // Subscriptions Lambda Role
+    // Permissions: DDB item-level read/write for subscriptions + verification tokens,
+    //              SES send (verification emails), CloudWatch logs.
+    // Kept separate so the query Lambda stays strictly read-only.
+    const subscriptionsRole = new iam.Role(this, 'SubscriptionsLambdaRole', {
+      roleName: 'FireRiskEngine-SubscriptionsLambdaRole',
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      description: 'Role for subscriptions Lambda with DDB item read/write, SES send, and CloudWatch logs',
+    });
+
+    subscriptionsRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'DynamoDBSubscriptionsReadWrite',
+      effect: iam.Effect.ALLOW,
+      actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'],
+      resources: [this.table.tableArn],
+    }));
+
+    subscriptionsRole.addToPolicy(new iam.PolicyStatement({
+      sid: 'SESSendVerificationEmail',
+      effect: iam.Effect.ALLOW,
+      actions: ['ses:SendEmail'],
+      resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`],
+    }));
+
+    subscriptionsRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')
+    );
+
     // Notification Lambda Role
     // Permissions: DDB Query on table+GSIs (read subscriptions only),
     //              SES SendEmail/SendRawEmail restricted to account identities,
@@ -227,6 +262,13 @@ export class FireRiskEngineStack extends cdk.Stack {
     // ========================================
 
     const frontendOrigin = process.env.FRONTEND_ORIGIN ?? 'https://fuegoradar.ar';
+    const fromEmail = process.env.FROM_EMAIL ?? 'alertas@fuegoradar.ar';
+    const verifyBaseUrl = process.env.VERIFY_BASE_URL ?? `${frontendOrigin}/`;
+
+    // API key value lives in SSM Parameter Store (never hardcoded in source).
+    // Create it once with: aws ssm put-parameter --name /fuegoradar/prod/API_KEY --type String --value <key>
+    const apiKeyParamName = process.env.API_KEY_SSM_NAME ?? '/fuegoradar/prod/API_KEY';
+    const apiKeyValue = ssm.StringParameter.valueForStringParameter(this, apiKeyParamName);
 
     // ========================================
     // Lambda Functions (placeholder - handlers defined in later tasks)
@@ -274,7 +316,25 @@ export class FireRiskEngineStack extends cdk.Stack {
       environment: {
         TABLE_NAME: this.table.tableName,
         CORS_ORIGIN: frontendOrigin,
-        API_KEYS: 'FireRiskEngineApiKey2026',
+        API_KEYS: apiKeyValue,
+      },
+      logRetention: logs.RetentionDays.ONE_WEEK,
+    });
+
+    const subscriptionsLambda = new lambda.Function(this, 'SubscriptionsLambda', {
+      functionName: 'FireRiskEngine-Subscriptions',
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'api.handler',
+      code: lambda.Code.fromAsset('../backend/dist/lambdas'),
+      memorySize: 128,
+      timeout: cdk.Duration.seconds(10),
+      role: subscriptionsRole,
+      environment: {
+        TABLE_NAME: this.table.tableName,
+        CORS_ORIGIN: frontendOrigin,
+        API_KEYS: apiKeyValue,
+        FROM_EMAIL: fromEmail,
+        VERIFY_BASE_URL: verifyBaseUrl,
       },
       logRetention: logs.RetentionDays.ONE_WEEK,
     });
@@ -304,6 +364,7 @@ export class FireRiskEngineStack extends cdk.Stack {
       role: notificationRole,
       environment: {
         TABLE_NAME: this.table.tableName,
+        FROM_EMAIL: fromEmail,
       },
       logRetention: logs.RetentionDays.ONE_WEEK,
     });
@@ -370,7 +431,7 @@ export class FireRiskEngineStack extends cdk.Stack {
     const alertsIntegration = new apigateway.LambdaIntegration(queryLambda, {
       proxy: true,
     });
-    const subscriptionsIntegration = new apigateway.LambdaIntegration(queryLambda, {
+    const subscriptionsIntegration = new apigateway.LambdaIntegration(subscriptionsLambda, {
       proxy: true,
     });
 
@@ -409,6 +470,12 @@ export class FireRiskEngineStack extends cdk.Stack {
     // POST /subscriptions (no cache)
     const subscriptionsResource = this.api.root.addResource('subscriptions');
     subscriptionsResource.addMethod('POST', subscriptionsIntegration, {
+      methodResponses: [{ statusCode: '200' }],
+    });
+
+    // GET /subscriptions/verify (no cache) — confirms the emailed token
+    const verifyResource = subscriptionsResource.addResource('verify');
+    verifyResource.addMethod('GET', subscriptionsIntegration, {
       methodResponses: [{ statusCode: '200' }],
     });
 
@@ -451,7 +518,7 @@ export class FireRiskEngineStack extends cdk.Stack {
     const apiKey = this.api.addApiKey('FireRiskEngineApiKey', {
       apiKeyName: 'FireRiskEngine-DefaultKey',
       description: 'Default API key for Fire Risk Engine',
-      value: 'FireRiskEngineApiKey2026',
+      value: apiKeyValue,
     });
 
     const usagePlan = this.api.addUsagePlan('FireRiskEngineUsagePlan', {
@@ -516,6 +583,11 @@ export class FireRiskEngineStack extends cdk.Stack {
       {
         ResourcePath: '/subscriptions/POST',
         HttpMethod: 'POST',
+        CachingEnabled: false,
+      },
+      {
+        ResourcePath: '/subscriptions/verify/GET',
+        HttpMethod: 'GET',
         CachingEnabled: false,
       },
     ]);
@@ -712,7 +784,7 @@ export class FireRiskEngineStack extends cdk.Stack {
         '/risk/*': {
           origin: apiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: new cloudfront.CachePolicy(this, 'RiskCachePolicy', {
             cachePolicyName: 'FireRiskEngine-RiskCache-120s',
             comment: 'Cache /risk/* endpoints for 120 seconds',
@@ -728,7 +800,7 @@ export class FireRiskEngineStack extends cdk.Stack {
         '/hotspots': {
           origin: apiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: new cloudfront.CachePolicy(this, 'HotspotsCachePolicy', {
             cachePolicyName: 'FireRiskEngine-HotspotsCache-60s',
             comment: 'Cache /hotspots endpoint for 60 seconds',
@@ -744,7 +816,7 @@ export class FireRiskEngineStack extends cdk.Stack {
         '/alerts': {
           origin: apiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: new cloudfront.CachePolicy(this, 'AlertsCachePolicy', {
             cachePolicyName: 'FireRiskEngine-AlertsCache-60s',
             comment: 'Cache /alerts endpoint for 60 seconds',
@@ -760,8 +832,9 @@ export class FireRiskEngineStack extends cdk.Stack {
         '/health': {
           origin: apiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
         // /subscriptions — no cache (POST mutation)
         '/subscriptions': {
@@ -769,6 +842,15 @@ export class FireRiskEngineStack extends cdk.Stack {
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+        },
+        // /subscriptions/verify — no cache, forwards token/email query string
+        '/subscriptions/*': {
+          origin: apiOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
       },
     });

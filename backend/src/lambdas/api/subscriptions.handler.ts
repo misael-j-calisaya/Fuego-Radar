@@ -58,12 +58,24 @@ export interface SubscriptionsDeps {
 
 const sesClient = new SESClient({});
 const FROM_EMAIL = process.env.FROM_EMAIL ?? 'alertas@fuegoradar.ar';
-const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL ?? 'https://api.fuegoradar.ar/subscriptions/verify';
+const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL ?? 'https://fuegoradar.ar/';
 
 async function putSubscriptionDefault(item: SubscriptionItem): Promise<void> {
-  await docClient.send(
-    new PutCommand({ TableName: TABLE_NAME, Item: item }),
-  );
+  try {
+    await docClient.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: item,
+        // An unverified request must not overwrite (and thus disable) a verified subscription.
+        ConditionExpression: 'attribute_not_exists(PK) OR verified = :false',
+        ExpressionAttributeValues: { ':false': false },
+      }),
+    );
+  } catch (error) {
+    // Verified subscription: the new minSeverity travels with the token and is applied on confirmation.
+    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return;
+    throw error;
+  }
 }
 
 const defaultVerifierDeps: VerifierDependencies = {
@@ -83,19 +95,24 @@ const defaultVerifierDeps: VerifierDependencies = {
       Key: { PK: `VERIFY#${token}`, SK: `EMAIL#${email}` },
     }));
   },
-  markSubscriptionsVerified: async (email: string, provinces: string[]) => {
+  markSubscriptionsVerified: async (email: string, provinces: string[], minSeverity?: string) => {
     for (const province of provinces) {
       await docClient.send(new UpdateCommand({
         TableName: TABLE_NAME,
         Key: { PK: `SUB#${email}`, SK: `PROV#${province}` },
-        UpdateExpression: 'SET verified = :v REMOVE #ttl',
+        UpdateExpression: minSeverity
+          ? 'SET verified = :v, minSeverity = :sev, GSI1SK = :gsi1sk REMOVE #ttl'
+          : 'SET verified = :v REMOVE #ttl',
         ExpressionAttributeNames: { '#ttl': 'TTL' },
-        ExpressionAttributeValues: { ':v': true },
+        ExpressionAttributeValues: {
+          ':v': true,
+          ...(minSeverity ? { ':sev': minSeverity, ':gsi1sk': `SEVERITY#${minSeverity}` } : {}),
+        },
       }));
     }
   },
   sendVerificationEmail: async (request) => {
-    const verifyUrl = `${VERIFY_BASE_URL}?token=${request.token}&email=${encodeURIComponent(request.email)}`;
+    const verifyUrl = `${VERIFY_BASE_URL}?token=${request.token}&email=${encodeURIComponent(request.to)}`;
     await sesClient.send(new SendEmailCommand({
       Source: FROM_EMAIL,
       Destination: { ToAddresses: [request.to] },
@@ -230,12 +247,12 @@ export function createSubscriptionsHandler(customDeps: Partial<SubscriptionsDeps
           createdAt,
         };
         // Add TTL for automatic cleanup of unverified subscriptions
-        (item as any).TTL = unverifiedTTL;
+        (item as typeof item & { TTL?: number }).TTL = unverifiedTTL;
         await deps.putSubscription(item);
       }
 
       // Initiate email verification
-      await initiateVerification(email, provinces, deps.verifierDeps);
+      await initiateVerification(email, provinces, deps.verifierDeps, minSeverity);
 
       logger.info('Subscription created, verification pending', {
         subscriptionId,
@@ -261,7 +278,7 @@ export function createVerifyHandler(customDeps: Partial<SubscriptionsDeps> = {})
   const deps = { ...defaultDeps, ...customDeps };
   return async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
     try {
-      const validation = validateVerifyRequest(event.queryStringParameters);
+      const validation = validateVerifyRequest(event.queryStringParameters ?? null);
       if (!validation.valid) {
         return badRequest(validation.message);
       }

@@ -47,17 +47,18 @@ export interface GridCell {
 
 export interface DataSourceStatus {
   name: string;
-  status: 'online' | 'offline' | 'syncing';
+  status: 'online' | 'offline' | 'syncing' | 'degraded' | 'unknown' | 'simulated';
   lastSync: string;
   latencyMs: number;
 }
 
+export type AlertSeverity = Alert['severity'];
+
+/** Must match backend `POST /subscriptions` validation (email, provinces[], minSeverity). */
 export interface SubscriptionData {
-  name: string;
-  phone: string;
   email: string;
-  province: string;
-  notificationsEnabled: boolean;
+  provinces: string[];
+  minSeverity: AlertSeverity;
 }
 
 // Helper to determine danger level based on FWI
@@ -320,134 +321,149 @@ export const mockGridCells: GridCell[] = [
 ];
 
 export const mockSourceStatuses: DataSourceStatus[] = [
-  { name: 'NASA FIRMS (Satelital)', status: 'online', lastSync: new Date(Date.now() - 5 * 60000).toISOString(), latencyMs: 142 },
-  { name: 'Servicio Meteorológico Nacional', status: 'online', lastSync: new Date(Date.now() - 12 * 60000).toISOString(), latencyMs: 98 },
-  { name: 'CONAE (Imágenes SAR/Ópticas)', status: 'syncing', lastSync: new Date(Date.now() - 25 * 60000).toISOString(), latencyMs: 340 }
+  { name: 'NASA FIRMS (Satelital)', status: 'simulated', lastSync: new Date().toISOString(), latencyMs: 0 },
+  { name: 'Open-Meteo (Meteorología)', status: 'simulated', lastSync: new Date().toISOString(), latencyMs: 0 },
+  { name: 'Motor de Riesgo', status: 'simulated', lastSync: new Date().toISOString(), latencyMs: 0 },
 ];
 
-const API_BASE = 'https://d2xtb0pdutpecz.cloudfront.net';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+const API_KEY = import.meta.env.VITE_API_KEY ?? '';
+export const DEMO_FALLBACK_ENABLED = import.meta.env.VITE_ENABLE_DEMO_FALLBACK !== 'false';
+const REQUEST_TIMEOUT_MS = 10_000;
 
-// Service Layer implementation
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (!API_BASE) {
+    throw new ApiError('VITE_API_BASE_URL no está configurada', 0);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+        ...init.headers,
+      },
+    });
+    const isJson = (response.headers.get('content-type') ?? '').includes('application/json');
+    const body = isJson ? await response.json().catch(() => null) : null;
+    if (response.ok && body === null) {
+      throw new ApiError('Respuesta inesperada del servidor', response.status);
+    }
+    if (!response.ok) {
+      const message = (body && (body.message || body.error)) || `HTTP ${response.status}`;
+      throw new ApiError(String(message), response.status);
+    }
+    return body as T;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(error instanceof Error ? error.message : 'Error de red', 0);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+type BackendSourceStatus = 'ok' | 'degraded' | 'down' | 'unknown' | 'simulated';
+
+interface HealthResponse {
+  status: string;
+  timestamp: string;
+  services?: {
+    firms?: { status: BackendSourceStatus; lastIngestion: string | null };
+    weather?: { status: BackendSourceStatus; staleProvinces: number };
+    riskEngine?: { status: BackendSourceStatus; lastCalculation: string | null };
+  };
+}
+
+function toUiStatus(status: BackendSourceStatus | undefined): DataSourceStatus['status'] {
+  switch (status) {
+    case 'ok': return 'online';
+    case 'degraded': return 'degraded';
+    case 'down': return 'offline';
+    case 'simulated': return 'simulated';
+    default: return 'unknown';
+  }
+}
+
+// Service layer: every method throws on failure. Callers decide whether to fall
+// back to demo data, and must label it as such in the UI.
 export class FireService {
-  // Fetches active hotspots from backend (falls back to mock)
+  static isConfigured(): boolean {
+    return Boolean(API_BASE);
+  }
+
   static async getActiveHotspots(): Promise<Hotspot[]> {
-    try {
-      const response = await fetch(`${API_BASE}/hotspots`, {
-        headers: { 'x-api-key': 'FireRiskEngineApiKey2026' }
-      });
-      if (response.ok) return await response.json();
-    } catch (e) {
-      console.warn('Backend hotspots endpoint failed, using mock data.', e);
-    }
-    return new Promise((resolve) => {
-      setTimeout(() => resolve([...mockHotspots]), 200);
-    });
+    type RawHotspot = Omit<Hotspot, 'id' | 'windDir'> & Partial<Pick<Hotspot, 'id' | 'windDir'>>;
+    const data = await request<RawHotspot[]>('/hotspots');
+    return data.map((h, i) => ({
+      ...h,
+      id: h.id ?? `hs-${h.lat}-${h.lng}-${h.date ?? i}`,
+      windDir: h.windDir ?? '',
+    }));
   }
 
-  // Fetches risk by province (falls back to mock)
-  static async getProvinceRisks(): Promise<ProvinceRisk[]> {
-    try {
-      const response = await fetch(`${API_BASE}/risk/provinces`, {
-        headers: { 'x-api-key': 'FireRiskEngineApiKey2026' }
-      });
-      if (response.ok) return await response.json();
-    } catch (e) {
-      console.warn('Backend risk/provinces endpoint failed, using mock data.', e);
-    }
-    return new Promise((resolve) => {
-      setTimeout(() => resolve([...mockProvinceRisks]), 200);
-    });
+  static getProvinceRisks(): Promise<ProvinceRisk[]> {
+    return request<ProvinceRisk[]>('/risk/provinces');
   }
 
-  // Fetches current alert/warning zones (falls back to mock)
-  static async getAlerts(): Promise<Alert[]> {
-    try {
-      const response = await fetch(`${API_BASE}/alerts`, {
-        headers: { 'x-api-key': 'FireRiskEngineApiKey2026' }
-      });
-      if (response.ok) return await response.json();
-    } catch (e) {
-      console.warn('Backend alerts endpoint failed, using mock data.', e);
-    }
-    return new Promise((resolve) => {
-      setTimeout(() => resolve([...mockAlerts]), 200);
-    });
+  static getAlerts(): Promise<Alert[]> {
+    return request<Alert[]>('/alerts');
   }
 
-  // Fetches risk grid overlay (falls back to mock)
-  static async getGridCells(): Promise<GridCell[]> {
-    try {
-      const response = await fetch(`${API_BASE}/risk/zones`, {
-        headers: { 'x-api-key': 'FireRiskEngineApiKey2026' }
-      });
-      if (response.ok) return await response.json();
-    } catch (e) {
-      console.warn('Backend risk/zones endpoint failed, using mock data.', e);
-    }
-    return new Promise((resolve) => {
-      setTimeout(() => resolve([...mockGridCells]), 200);
-    });
+  static getGridCells(): Promise<GridCell[]> {
+    return request<GridCell[]>('/risk/zones');
   }
 
-  // Simulates fetching data feed statuses (falls back to mock)
   static async getSourceStatuses(): Promise<DataSourceStatus[]> {
-    try {
-      const response = await fetch(`${API_BASE}/health`);
-      if (response.ok) {
-        const data = await response.json();
-        // Map health services to DataSourceStatus array (with optional chaining to prevent crash)
-        return [
-          { name: 'NASA FIRMS (Satelital)', status: data.services?.firmsMock === 'online' ? 'online' : 'online', lastSync: data.timestamp, latencyMs: 142 },
-          { name: 'Servicio Meteorológico Nacional', status: data.services?.weatherMock === 'online' ? 'online' : 'online', lastSync: data.timestamp, latencyMs: 98 },
-          { name: 'CONAE (Imágenes SAR/Ópticas)', status: data.services?.conaeSync === 'online' ? 'syncing' : 'syncing', lastSync: data.timestamp, latencyMs: 340 }
-        ];
-      }
-    } catch (e) {
-      console.warn('Backend health endpoint failed, using mock data.', e);
-    }
-    return new Promise((resolve) => {
-      setTimeout(() => resolve([...mockSourceStatuses]), 200);
-    });
+    const started = performance.now();
+    const data = await request<HealthResponse>('/health');
+    const latencyMs = Math.round(performance.now() - started);
+    const s = data.services ?? {};
+    return [
+      { name: 'NASA FIRMS (Satelital)', status: toUiStatus(s.firms?.status), lastSync: s.firms?.lastIngestion ?? data.timestamp, latencyMs },
+      { name: 'Open-Meteo (Meteorología)', status: toUiStatus(s.weather?.status), lastSync: data.timestamp, latencyMs },
+      { name: 'Motor de Riesgo', status: toUiStatus(s.riskEngine?.status), lastSync: s.riskEngine?.lastCalculation ?? data.timestamp, latencyMs },
+    ];
   }
 
-  // Subscribes to email/SMS notifications on backend
-  static async subscribeToAlerts(data: SubscriptionData): Promise<{ success: boolean; message: string }> {
-    try {
-      const response = await fetch(`${API_BASE}/subscriptions`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-api-key': 'FireRiskEngineApiKey2026'
-        },
-        body: JSON.stringify(data)
-      });
-      if (response.ok) return await response.json();
-    } catch (e) {
-      console.warn('Backend subscriptions post failed, using local mock.', e);
-    }
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        console.log('Subscribed user details:', data);
-        resolve({
-          success: true,
-          message: `Suscripción exitosa (Local Mock). Recibirás alertas para ${data.province} en el celular ${data.phone} y correo ${data.email}.`
-        });
-      }, 500);
+  /** POST /subscriptions — creates an unverified subscription and emails a confirmation link. */
+  static async subscribeToAlerts(data: SubscriptionData): Promise<{ message: string }> {
+    const body = await request<{ message?: string }>('/subscriptions', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
+    return { message: body?.message ?? 'Te enviamos un email para confirmar la suscripción.' };
   }
 
-  // Simulates reporting a new wildfire verification (local simulated write)
+  /** GET /subscriptions/verify — confirms the token received by email. */
+  static async verifySubscription(token: string, email: string): Promise<{ message: string }> {
+    const params = new URLSearchParams({ token, email });
+    const body = await request<{ message?: string }>(`/subscriptions/verify?${params}`);
+    return { message: body?.message ?? 'Suscripción confirmada.' };
+  }
+
+  /**
+   * Community ground-truth report. There is no backend endpoint yet, so this is
+   * acknowledged locally only and the message says so explicitly.
+   */
   static async reportVerification(hotspotId: string, verified: boolean): Promise<{ success: boolean; message: string }> {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        console.log(`Hotspot verification reported for ID ${hotspotId}:`, verified);
-        resolve({
-          success: true,
-          message: verified 
-            ? 'Reporte verificado. Gracias por ayudar a la comunidad.'
-            : 'Falsa alarma reportada. Evaluando datos satelitales.'
-        });
-      }, 300);
-    });
+    console.info(`Hotspot report (local only) ${hotspotId}:`, verified);
+    return {
+      success: true,
+      message: verified
+        ? 'Gracias. Tu confirmación quedó registrada en este dispositivo (aún no se envía al servidor).'
+        : 'Gracias. Marcaste el foco como posible falsa alarma (registro local, aún no se envía al servidor).',
+    };
   }
 }

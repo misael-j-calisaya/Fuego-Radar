@@ -118,13 +118,22 @@ export interface RiskScoreItem extends DynamoDBKeyDesign {
   confidenceScore: number;
   lastUpdated: string;
   weatherStale: boolean;
+  /** Simplified FWI (0-100) used for the province */
+  fwi?: number;
+  /** Weather snapshot used for the calculation */
+  temperature?: number;
+  relativeHumidity?: number;
+  windSpeed?: number;
+  rain24h?: number;
+  /** Rolling 7-day hotspot counts keyed by YYYY-MM-DD (historical factor) */
+  dailyHotspotCounts?: Record<string, number>;
 }
 
 /** DynamoDB entity: Risk zone grid cell */
 export interface RiskZoneItem extends DynamoDBKeyDesign {
   PK: 'RISK#ZONES';
   SK: `GRID#${string}`;
-  GSI1PK: `PROVINCE#${string}`;
+  GSI1PK: `ZONEPROV#${string}`;
   GSI1SK: `FWI#${string}`;
   bounds: [[number, number], [number, number]];
   fwi: number;

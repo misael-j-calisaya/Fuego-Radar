@@ -7,6 +7,7 @@
 
 import {
   BatchWriteCommand,
+  GetCommand,
   PutCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
@@ -26,6 +27,7 @@ import type {
   AlertItem,
   SubscriptionItem,
   IngestionMetaItem,
+  RiskZoneItem,
 } from '../shared/types.js';
 
 // ============================================
@@ -253,9 +255,10 @@ export async function getSubscriptionsByProvince(
     new QueryCommand({
       TableName: TABLE_NAME,
       IndexName: 'GSI1',
-      KeyConditionExpression: 'GSI1PK = :gsi1pk',
+      KeyConditionExpression: 'GSI1PK = :gsi1pk AND begins_with(GSI1SK, :sev)',
       ExpressionAttributeValues: {
         ':gsi1pk': `PROVINCE#${province}`,
+        ':sev': 'SEVERITY#',
       },
     }),
   );
@@ -280,5 +283,60 @@ export async function putIngestionMeta(item: IngestionMetaItem): Promise<void> {
 
   await docClient.send(
     new PutCommand({ TableName: TABLE_NAME, Item: item }),
+  );
+}
+
+// ============================================
+// Risk context & operational state
+// ============================================
+
+/** Get the current risk score for one province (previous run, used for trend/history). */
+export async function getRiskScore(province: string): Promise<RiskScoreItem | null> {
+  const response = await docClient.send(
+    new GetCommand({
+      TableName: TABLE_NAME,
+      Key: { PK: 'RISK#CURRENT', SK: `PROVINCE#${province}` },
+    }),
+  );
+  return (response.Item as RiskScoreItem | undefined) ?? null;
+}
+
+/** Persist risk-zone grid cells (PK=RISK#ZONES) using BatchWriteItem with retry. */
+export async function putRiskZones(items: RiskZoneItem[]): Promise<void> {
+  if (items.length === 0) return;
+  await batchWriteWithRetry(items as unknown as Record<string, unknown>[]);
+}
+
+/** Most recent ingestion run metadata (PK=META#INGESTION, newest RUN#). */
+export async function getLatestIngestionMeta(): Promise<IngestionMetaItem | null> {
+  const response = await docClient.send(
+    new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+      ExpressionAttributeValues: { ':pk': 'META#INGESTION', ':sk': 'RUN#' },
+      ScanIndexForward: false,
+      Limit: 1,
+    }),
+  );
+  return (response.Items?.[0] as IngestionMetaItem | undefined) ?? null;
+}
+
+const FIRMS_STATE_KEY = { PK: 'META#INGESTION', SK: 'STATE#FIRMS' } as const;
+
+/** Consecutive FIRMS failure counter persisted across Lambda cold starts. */
+export async function getFirmsFailureCount(): Promise<number> {
+  const response = await docClient.send(
+    new GetCommand({ TableName: TABLE_NAME, Key: FIRMS_STATE_KEY }),
+  );
+  const value = response.Item?.consecutiveFailures;
+  return typeof value === 'number' && value >= 0 ? value : 0;
+}
+
+export async function putFirmsFailureCount(count: number): Promise<void> {
+  await docClient.send(
+    new PutCommand({
+      TableName: TABLE_NAME,
+      Item: { ...FIRMS_STATE_KEY, consecutiveFailures: count, updatedAt: new Date().toISOString() },
+    }),
   );
 }

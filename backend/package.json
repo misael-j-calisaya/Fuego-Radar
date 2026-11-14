@@ -1,13 +1,14 @@
 {
   "name": "fuegoradar-backend",
   "version": "1.0.0",
-  "description": "Simulated serverless backend for Alerta Fuego Argentina",
+  "description": "Fuego Radar backend: AWS Lambda handlers plus a local simulator server",
   "main": "src/server.ts",
   "type": "module",
   "scripts": {
     "start": "tsx src/server.ts",
-    "test": "tsx --test src/tests/services.test.ts",
-    "build": "node build.js"
+    "test": "tsx --test src/tests/*.test.ts",
+    "build": "node build.js",
+    "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1068.0",

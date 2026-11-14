@@ -52,7 +52,7 @@ const nonDuplicateListArb: fc.Arbitrary<NormalizedHotspot[]> = fc.integer({ min:
       { minLength: count, maxLength: count },
     ),
   ).map(([items]) =>
-    items.map(([idx, h], i) => ({
+    items.map(([_idx, h], i) => ({
       ...h,
       // Spread hotspots 3° apart in latitude to guarantee no spatial overlap
       lat: -50 + i * 3,
