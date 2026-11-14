@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', '**/dist', '**/cdk.out', '**/node_modules', 'infrastructure/**/*.js', 'infrastructure/**/*.d.ts']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -17,6 +17,33 @@ export default defineConfig([
     ],
     languageOptions: {
       globals: globals.browser,
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+        ignoreRestSiblings: true,
+      }],
+    },
+  },
+  {
+    // shadcn/ui primitives intentionally co-export variant helpers
+    files: ['src/components/ui/**/*.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
+    files: ['backend/**/*.{ts,js,mjs}', 'infrastructure/**/*.ts', 'scripts/**/*.{js,mjs}', '*.{js,mjs}'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
+    files: ['backend/src/tests/**/*.ts', 'infrastructure/test/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 ])

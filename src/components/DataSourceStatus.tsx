@@ -23,6 +23,25 @@ export const DataSourceStatus: React.FC<DataSourceStatusProps> = React.memo(({ s
             Sinc.
           </span>
         );
+      case 'degraded':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/35 text-[9px] font-bold uppercase tracking-wider select-none shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"></span>
+            Degradado
+          </span>
+        );
+      case 'simulated':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/35 text-[9px] font-bold uppercase tracking-wider select-none shrink-0">
+            Simulado
+          </span>
+        );
+      case 'unknown':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-500/15 text-zinc-300 border border-zinc-500/35 text-[9px] font-bold uppercase tracking-wider select-none shrink-0">
+            Sin datos
+          </span>
+        );
       case 'offline':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/35 text-[9px] font-bold uppercase tracking-wider select-none filter brightness-110 shrink-0">
@@ -36,10 +55,10 @@ export const DataSourceStatus: React.FC<DataSourceStatusProps> = React.memo(({ s
   const formatTime = (isoString: string) => {
     try {
       const date = new Date(isoString);
-      if (isNaN(date.getTime())) return '12:00:00';
+      if (isNaN(date.getTime())) return '--:--:--';
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    } catch (e) {
-      return '12:00:00';
+    } catch {
+      return '--:--:--';
     }
   };
 
@@ -57,7 +76,7 @@ export const DataSourceStatus: React.FC<DataSourceStatusProps> = React.memo(({ s
             <div className="flex items-center justify-between gap-2">
               <span className="font-extrabold text-zinc-100 text-xs tracking-wide truncate">{src.name}</span>
               <div className="flex items-center gap-2 select-none">
-                <span className="text-[10px] text-zinc-200 font-mono font-bold">{src.latencyMs}ms</span>
+                {src.latencyMs > 0 && <span className="text-[10px] text-zinc-200 font-mono font-bold">{src.latencyMs}ms</span>}
                 {getStatusPill(src.status)}
               </div>
             </div>

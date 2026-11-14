@@ -5,6 +5,22 @@ import 'leaflet/dist/leaflet.css';
 import type { Hotspot, ProvinceRisk, GridCell, Alert } from '../services/api';
 import { FireService } from '../services/api';
 import provincesData from '../data/provinces.json';
+import type { Feature, FeatureCollection } from 'geojson';
+
+const provincesGeoJson = provincesData as unknown as FeatureCollection;
+
+// Tracks zoom so client-side clustering can adapt
+const MapEventsTracker: React.FC<{ onZoom: (zoom: number) => void }> = ({ onZoom }) => {
+  const map = useMap();
+  useEffect(() => {
+    const onZoomEnd = () => onZoom(map.getZoom());
+    map.on('zoomend', onZoomEnd);
+    return () => {
+      map.off('zoomend', onZoomEnd);
+    };
+  }, [map, onZoom]);
+  return null;
+};
 
 // Name normalizer helper to align different province representations
 const normalizeProvinceName = (name: string): string => {
@@ -29,7 +45,7 @@ const getRiskLevelColor = (level?: string) => {
 };
 
 // Fix Leaflet default icon issues in React
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
@@ -84,13 +100,14 @@ const MapController: React.FC<{
   useEffect(() => {
     if (selectedProvinceName) {
       // Search for province centroid in the geojson features
-      const features = (provincesData as any).features;
-      const provinceFeature = features.find((f: any) => 
-        normalizeProvinceName(f.properties.nombre).toLowerCase() === selectedProvinceName.toLowerCase()
+      const features = provincesGeoJson.features;
+      const provinceFeature = features.find((f: Feature) => 
+        normalizeProvinceName(f.properties?.nombre).toLowerCase() === selectedProvinceName.toLowerCase()
       );
 
-      if (provinceFeature && provinceFeature.properties.centroide) {
-        const { lat, lon } = provinceFeature.properties.centroide;
+      const centroide = provinceFeature?.properties?.centroide;
+      if (centroide) {
+        const { lat, lon } = centroide;
         // Zoom levels: Buenos Aires might need lower zoom, Tucuman higher. Set average 6.
         map.flyTo([lat, lon], 6, {
           animate: true,
@@ -343,8 +360,8 @@ export const NationalMap: React.FC<NationalMapProps> = React.memo(({
   }, []);
 
   // Style helper for GeoJSON feature representation
-  const geojsonStyle = useCallback((feature: any) => {
-    const rawProvName = feature.properties.nombre;
+  const geojsonStyle = useCallback((feature?: Feature) => {
+    const rawProvName = feature?.properties?.nombre;
     const provName = normalizeProvinceName(rawProvName);
     const currentRisks = provinceRisksRef.current;
     const risk = currentRisks.find(r => normalizeProvinceName(r.provinceName).toLowerCase() === provName.toLowerCase());
@@ -392,17 +409,17 @@ export const NationalMap: React.FC<NationalMapProps> = React.memo(({
   // In-place styling update loop to prevent map lag during selection/hover changes
   useEffect(() => {
     if (geoJsonRef.current) {
-      geoJsonRef.current.eachLayer((layer: any) => {
-        if (layer.feature) {
-          const style = geojsonStyle(layer.feature);
-          layer.setStyle(style);
+      geoJsonRef.current.eachLayer((layer: L.Layer) => {
+        const path = layer as L.Path & { feature?: Feature };
+        if (path.feature) {
+          path.setStyle(geojsonStyle(path.feature));
         }
       });
     }
   }, [selectedProvinceName, provinceRisks, geojsonStyle]);
 
-  const onEachFeature = useCallback((feature: any, layer: L.Layer) => {
-    const rawProvName = feature.properties.nombre;
+  const onEachFeature = useCallback((feature: Feature, layer: L.Layer) => {
+    const rawProvName = feature?.properties?.nombre;
     const provName = normalizeProvinceName(rawProvName);
 
     layer.on({
@@ -477,18 +494,6 @@ export const NationalMap: React.FC<NationalMapProps> = React.memo(({
     });
   }, [onSelectProvince]);
 
-  // Map events tracker to update client-side clustering on zoom
-  const MapEventsTracker = () => {
-    const map = useMap();
-    useEffect(() => {
-      const onZoomEnd = () => setMapZoom(map.getZoom());
-      map.on('zoomend', onZoomEnd);
-      return () => {
-        map.off('zoomend', onZoomEnd);
-      };
-    }, [map]);
-    return null;
-  };
 
   // Grid Cell coloring helper
   const getGridColor = (level: string) => {
@@ -509,7 +514,7 @@ export const NationalMap: React.FC<NationalMapProps> = React.memo(({
       <GeoJSON
         ref={geoJsonRef}
         key="geojson-argentina-provinces"
-        data={provincesData as any}
+        data={provincesGeoJson}
         style={geojsonStyle}
         onEachFeature={onEachFeature}
       />
@@ -536,7 +541,7 @@ export const NationalMap: React.FC<NationalMapProps> = React.memo(({
         selectedProvinceName={selectedProvinceName}
         selectedAlert={selectedAlert}
       />
-      <MapEventsTracker />
+      <MapEventsTracker onZoom={setMapZoom} />
 
       {/* Layer 1: Province Choropleth Risk */}
       {visibleLayers.provinces && geoJsonLayer}

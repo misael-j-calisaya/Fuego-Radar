@@ -3,9 +3,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import {
   FireService,
+  DEMO_FALLBACK_ENABLED,
   mockProvinceRisks,
   mockGridCells,
-  mockAlerts
+  mockAlerts,
+  mockHotspots,
+  mockSourceStatuses
 } from './services/api';
 import type {
   Hotspot,
@@ -24,6 +27,7 @@ const AlertPanel = React.lazy(() => import('./components/AlertPanel'));
 const AlertSubscriptionForm = React.lazy(() => import('./components/AlertSubscriptionForm'));
 const HotspotDetails = React.lazy(() => import('./components/HotspotDetails'));
 const DataSourceStatus = React.lazy(() => import('./components/DataSourceStatus'));
+const SubscriptionVerification = React.lazy(() => import('./components/SubscriptionVerification'));
 
 
 export const App: React.FC = () => {
@@ -39,7 +43,15 @@ export const App: React.FC = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [sourceStatuses, setSourceStatuses] = useState<StatusType[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [isDemo, setIsDemo] = useState(false);
+  // Datasets currently shown with simulated data (empty = everything is live)
+  const [demoDatasets, setDemoDatasets] = useState<string[]>([]);
+  const isDemo = demoDatasets.length > 0;
+  const [verification, setVerification] = useState<{ token: string; email: string } | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const email = params.get('email');
+    return token && email ? { token, email } : null;
+  });
 
   // Interaction states
   const [selectedHotspot, setSelectedHotspot] = useState<Hotspot | null>(null);
@@ -66,92 +78,106 @@ export const App: React.FC = () => {
 
   // Calculate dynamic freshness timestamp
   const lastFreshness = useMemo(() => {
-    if (sourceStatuses.length === 0) return '12:00:00';
+    if (sourceStatuses.length === 0) return '--:--:--';
     try {
       const times = sourceStatuses.map(s => new Date(s.lastSync).getTime()).filter(t => !isNaN(t));
-      if (times.length === 0) return '12:00:00';
+      if (times.length === 0) return '--:--:--';
       return new Date(Math.max(...times)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    } catch (e) {
-      return '12:00:00';
+    } catch {
+      return '--:--:--';
     }
   }, [sourceStatuses]);
 
-  // Fetch data progressively
+  const markDemo = useCallback((dataset: string) => {
+    setDemoDatasets(prev => (prev.includes(dataset) ? prev : [...prev, dataset]));
+  }, []);
+
+  // Fetch data progressively. On failure we only show simulated data when demo
+  // fallback is enabled, and always flag it in the UI.
   const fetchData = useCallback(() => {
     setProvincesLoading(true);
     setAlertsLoading(true);
     setStatusLoading(true);
     setError(null);
+    setDemoDatasets([]);
 
-    // 1. Fetch province risks
     FireService.getProvinceRisks()
       .then(data => {
-        if (!data || data.length === 0) {
-          console.log('Backend riskData is empty. Falling back to frontend mock data.');
-          setProvinceRisks(mockProvinceRisks);
-          setGridCells(mockGridCells);
-          setIsDemo(true);
-        } else {
+        if (data && data.length > 0) {
           setProvinceRisks(data);
-          setIsDemo(false);
+        } else if (DEMO_FALLBACK_ENABLED) {
+          setProvinceRisks(mockProvinceRisks);
+          markDemo('riesgo provincial');
+        } else {
+          setProvinceRisks([]);
         }
       })
       .catch(err => {
         console.error('Error fetching province risks:', err);
-        setProvinceRisks(mockProvinceRisks);
-        setGridCells(mockGridCells);
-        setIsDemo(true);
-        setError('Error al obtener datos provinciales.');
+        if (DEMO_FALLBACK_ENABLED) {
+          setProvinceRisks(mockProvinceRisks);
+          markDemo('riesgo provincial');
+        } else {
+          setError('No se pudieron obtener los datos de riesgo provincial.');
+        }
       })
       .finally(() => setProvincesLoading(false));
 
-    // 2. Fetch active hotspots
     FireService.getActiveHotspots()
       .then(data => setHotspots(data || []))
-      .catch(err => console.error('Error fetching active hotspots:', err));
+      .catch(err => {
+        console.error('Error fetching active hotspots:', err);
+        if (DEMO_FALLBACK_ENABLED) {
+          setHotspots(mockHotspots);
+          markDemo('focos de calor');
+        }
+      });
 
-    // 3. Fetch alerts
     FireService.getAlerts()
       .then(data => setAlerts(data || []))
       .catch(err => {
         console.error('Error fetching alerts:', err);
-        setAlerts(mockAlerts);
+        if (DEMO_FALLBACK_ENABLED) {
+          setAlerts(mockAlerts);
+          markDemo('alertas');
+        }
       })
       .finally(() => setAlertsLoading(false));
 
-    // 4. Fetch grid cells
     FireService.getGridCells()
       .then(data => setGridCells(data || []))
-      .catch(err => console.error('Error fetching grid cells:', err));
+      .catch(err => {
+        console.error('Error fetching grid cells:', err);
+        if (DEMO_FALLBACK_ENABLED) {
+          setGridCells(mockGridCells);
+          markDemo('grilla de riesgo');
+        }
+      });
 
-    // 5. Fetch statuses
     FireService.getSourceStatuses()
-      .then(data => setSourceStatuses(data || []))
-      .catch(err => console.error('Error fetching statuses:', err))
+      .then(setSourceStatuses)
+      .catch(err => {
+        console.error('Error fetching statuses:', err);
+        setSourceStatuses(DEMO_FALLBACK_ENABLED ? mockSourceStatuses : []);
+      })
       .finally(() => setStatusLoading(false));
-  }, []);
+  }, [markDemo]);
 
   useEffect(() => {
-    fetchData();
+    // Deferred so the effect body doesn't set state synchronously
+    void Promise.resolve().then(fetchData);
   }, [fetchData]);
 
-  // Polling interval for hotspots update
+  // Refresh hotspots and source health every 5 minutes (FIRMS ingests every 15)
   useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const hsData = await FireService.getActiveHotspots();
-        setHotspots(hsData || []);
-        
-        // Randomise statuses latency slightly to show simulated traffic
-        setSourceStatuses(prev => prev.map(s => ({
-          ...s,
-          lastSync: new Date().toISOString(),
-          latencyMs: Math.max(50, s.latencyMs + Math.floor(Math.random() * 30) - 15)
-        })));
-      } catch (e) {
-        console.error('Polling error:', e);
-      }
-    }, 30000);
+    const interval = setInterval(() => {
+      FireService.getActiveHotspots()
+        .then(data => setHotspots(data || []))
+        .catch(e => console.error('Polling error (hotspots):', e));
+      FireService.getSourceStatuses()
+        .then(setSourceStatuses)
+        .catch(e => console.error('Polling error (health):', e));
+    }, 5 * 60 * 1000);
 
     return () => clearInterval(interval);
   }, []);
@@ -199,6 +225,30 @@ export const App: React.FC = () => {
   return (
     <TooltipProvider>
       <div className="dashboard-container">
+        {isDemo && (
+          <div
+            role="alert"
+            className="fixed top-0 inset-x-0 z-[1500] flex flex-wrap items-center justify-center gap-2 px-3 py-1.5 bg-fuchsia-950/95 border-b border-fuchsia-500/50 text-fuchsia-100 text-[11px] font-semibold text-center"
+          >
+            <span className="material-symbols-outlined text-sm select-none">science</span>
+            MODO DEMOSTRACIÓN: datos simulados para {demoDatasets.join(', ')}. No usar para decisiones operativas.
+            <button onClick={fetchData} className="underline underline-offset-2 hover:text-white cursor-pointer">
+              Reintentar
+            </button>
+          </div>
+        )}
+        {verification && (
+          <Suspense fallback={null}>
+            <SubscriptionVerification
+              token={verification.token}
+              email={verification.email}
+              onClose={() => {
+                window.history.replaceState(null, '', window.location.pathname);
+                setVerification(null);
+              }}
+            />
+          </Suspense>
+        )}
         {/* Mobile Toggle Button for Sidebar */}
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
