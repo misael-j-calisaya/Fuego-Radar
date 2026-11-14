@@ -150,7 +150,7 @@ test('Risk Zones Handler', async (t) => {
       {
         PK: 'RISK#ZONES',
         SK: 'GRID#cell-001',
-        GSI1PK: 'PROVINCE#Córdoba',
+        GSI1PK: 'ZONEPROV#Córdoba',
         GSI1SK: 'FWI#65',
         bounds: [[-32.0, -64.5], [-31.5, -64.0]],
         fwi: 65,

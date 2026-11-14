@@ -125,7 +125,7 @@ describe('GET /risk/provinces', () => {
 describe('GET /risk/zones', () => {
   const mockZones: RiskZoneItem[] = [{
     PK: 'RISK#ZONES', SK: 'GRID#cell-001' as `GRID#${string}`,
-    GSI1PK: 'PROVINCE#Córdoba' as `PROVINCE#${string}`, GSI1SK: 'FWI#060' as `FWI#${string}`,
+    GSI1PK: 'ZONEPROV#Córdoba' as `ZONEPROV#${string}`, GSI1SK: 'FWI#060' as `FWI#${string}`,
     bounds: [[-32, -65], [-31, -64]], fwi: 60, riskLevel: 'Alto',
     hotspotsInCell: 2, lastUpdated: '2024-01-15T15:00:00Z',
   }];

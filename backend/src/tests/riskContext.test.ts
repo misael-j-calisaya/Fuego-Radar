@@ -68,6 +68,16 @@ describe('rolling fire history', () => {
   it('starts empty history with today only', () => {
     assert.deepEqual(updateDailyHotspotCounts(undefined, '2026-01-10', 4), { '2026-01-10': 4 });
   });
+  it('reconciles yesterday with late detections and never lowers a saved count', () => {
+    const h = updateDailyHotspotCounts({ '2026-01-09': 3 }, '2026-01-10', 1, { '2026-01-09': 7 });
+    assert.deepEqual(h, { '2026-01-09': 7, '2026-01-10': 1 });
+    const h2 = updateDailyHotspotCounts({ '2026-01-09': 7 }, '2026-01-10', 1, { '2026-01-09': 2 });
+    assert.equal(h2['2026-01-09'], 7);
+  });
+  it('builds zones on a partition separate from subscriptions', () => {
+    const zones = buildRiskZones([{ province: 'Córdoba', fwi: 50, centroid: { lat: -31.4, lng: -64.2 }, hotspots: [] }]);
+    assert.ok(zones.every((z) => z.GSI1PK.startsWith('ZONEPROV#')));
+  });
 });
 
 describe('critical alerts and de-duplication', () => {
