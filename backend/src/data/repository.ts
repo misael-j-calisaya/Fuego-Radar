@@ -255,9 +255,10 @@ export async function getSubscriptionsByProvince(
     new QueryCommand({
       TableName: TABLE_NAME,
       IndexName: 'GSI1',
-      KeyConditionExpression: 'GSI1PK = :gsi1pk',
+      KeyConditionExpression: 'GSI1PK = :gsi1pk AND begins_with(GSI1SK, :sev)',
       ExpressionAttributeValues: {
         ':gsi1pk': `PROVINCE#${province}`,
+        ':sev': 'SEVERITY#',
       },
     }),
   );

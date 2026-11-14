@@ -133,7 +133,7 @@ export interface RiskScoreItem extends DynamoDBKeyDesign {
 export interface RiskZoneItem extends DynamoDBKeyDesign {
   PK: 'RISK#ZONES';
   SK: `GRID#${string}`;
-  GSI1PK: `PROVINCE#${string}`;
+  GSI1PK: `ZONEPROV#${string}`;
   GSI1SK: `FWI#${string}`;
   bounds: [[number, number], [number, number]];
   fwi: number;

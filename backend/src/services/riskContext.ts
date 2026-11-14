@@ -140,7 +140,7 @@ export function buildRiskZones(
     return {
       PK: 'RISK#ZONES',
       SK: `GRID#${key}`,
-      GSI1PK: `PROVINCE#${cell.province}`,
+      GSI1PK: `ZONEPROV#${cell.province}`,
       GSI1SK: `FWI#${fwi.toString().padStart(3, '0')}`,
       bounds: [
         [cell.south, cell.west],
