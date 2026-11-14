@@ -61,9 +61,20 @@ const FROM_EMAIL = process.env.FROM_EMAIL ?? 'alertas@fuegoradar.ar';
 const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL ?? 'https://fuegoradar.ar/';
 
 async function putSubscriptionDefault(item: SubscriptionItem): Promise<void> {
-  await docClient.send(
-    new PutCommand({ TableName: TABLE_NAME, Item: item }),
-  );
+  try {
+    await docClient.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: item,
+        // An unverified request must not overwrite (and thus disable) a verified subscription.
+        ConditionExpression: 'attribute_not_exists(PK) OR verified = :false',
+        ExpressionAttributeValues: { ':false': false },
+      }),
+    );
+  } catch (error) {
+    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return;
+    throw error;
+  }
 }
 
 const defaultVerifierDeps: VerifierDependencies = {
