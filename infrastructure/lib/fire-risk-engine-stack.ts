@@ -784,7 +784,7 @@ export class FireRiskEngineStack extends cdk.Stack {
         '/risk/*': {
           origin: apiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: new cloudfront.CachePolicy(this, 'RiskCachePolicy', {
             cachePolicyName: 'FireRiskEngine-RiskCache-120s',
             comment: 'Cache /risk/* endpoints for 120 seconds',
@@ -800,7 +800,7 @@ export class FireRiskEngineStack extends cdk.Stack {
         '/hotspots': {
           origin: apiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: new cloudfront.CachePolicy(this, 'HotspotsCachePolicy', {
             cachePolicyName: 'FireRiskEngine-HotspotsCache-60s',
             comment: 'Cache /hotspots endpoint for 60 seconds',
@@ -816,7 +816,7 @@ export class FireRiskEngineStack extends cdk.Stack {
         '/alerts': {
           origin: apiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: new cloudfront.CachePolicy(this, 'AlertsCachePolicy', {
             cachePolicyName: 'FireRiskEngine-AlertsCache-60s',
             comment: 'Cache /alerts endpoint for 60 seconds',
@@ -832,7 +832,7 @@ export class FireRiskEngineStack extends cdk.Stack {
         '/health': {
           origin: apiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
@@ -848,7 +848,7 @@ export class FireRiskEngineStack extends cdk.Stack {
         '/subscriptions/*': {
           origin: apiOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
